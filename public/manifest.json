@@ -1,0 +1,58 @@
+{
+  "manifest_version": 3,
+  "name": "LinguaFlow — Bilingual Reading & Learning",
+  "version": "0.1.0",
+  "description": "Read any English page bilingually, look up words, learn from video subtitles, and build your vocabulary — private by default.",
+  "minimum_chrome_version": "116",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "LinguaFlow"
+  },
+  "options_page": "options.html",
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "permissions": ["storage", "unlimitedStorage", "contextMenus", "sidePanel"],
+  "host_permissions": [
+    "https://translate.googleapis.com/*",
+    "https://api-free.deepl.com/*",
+    "https://api.deepl.com/*",
+    "https://api.openai.com/*",
+    "https://api.cognitive.microsofttranslator.com/*",
+    "https://api.anthropic.com/*",
+    "https://api.dictionaryapi.dev/*"
+  ],
+  "optional_host_permissions": ["https://*/*", "http://*/*"],
+  "commands": {
+    "toggle-translation": {
+      "suggested_key": { "default": "Alt+T" },
+      "description": "Translate / restore the current page"
+    },
+    "cycle-display-mode": {
+      "suggested_key": { "default": "Alt+M" },
+      "description": "Cycle bilingual / translation-only / original"
+    },
+    "translate-selection": {
+      "suggested_key": { "default": "Alt+S" },
+      "description": "Translate the selected text"
+    }
+  }
+}
