@@ -131,9 +131,10 @@ export type TranslationErrorCode =
   | 'auth'
   | 'network'
   | 'unsupported'
+  | 'not_configured'
   | 'provider_error';
 
 export interface AppError {
-  code: TranslationErrorCode | 'internal' | 'not_configured' | 'permission_denied';
+  code: TranslationErrorCode | 'internal' | 'permission_denied';
   message: string;
 }
