@@ -18,7 +18,7 @@ export class GoogleProvider implements TranslationProvider {
   readonly displayName = 'Google Translate';
   readonly requiresKey = false;
 
-  async translate({ texts, from, to }: TranslateParams): Promise<string[]> {
+  async translate({ texts, from, to }: TranslateParams, _config = {}): Promise<string[]> {
     return mapWithConcurrency(texts, 4, async (text) => {
       const url = new URL(ENDPOINT);
       url.searchParams.set('client', 'gtx');

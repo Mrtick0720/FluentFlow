@@ -15,12 +15,17 @@ export async function mapWithConcurrency<T, R>(
   return results;
 }
 
-export function debounce<A extends unknown[]>(fn: (...args: A) => void, ms: number) {
+export interface Debounced<A extends unknown[]> {
+  (...args: A): void;
+  cancel(): void;
+}
+
+export function debounce<A extends unknown[]>(fn: (...args: A) => void, ms: number): Debounced<A> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const debounced = (...args: A) => {
+  const debounced = ((...args: A) => {
     clearTimeout(timer);
     timer = setTimeout(() => fn(...args), ms);
-  };
+  }) as Debounced<A>;
   debounced.cancel = () => clearTimeout(timer);
   return debounced;
 }

@@ -1,0 +1,41 @@
+/* Page-level styles for injected translations. Prefixed, minimal, reversible. */
+
+[data-lf-translated] > .lf-trans {
+  display: block;
+  margin-top: 0.35em;
+  font-size: calc(1em * var(--lf-font-scale, 0.92));
+  line-height: 1.6;
+  opacity: 0.94;
+  unicode-bidi: isolate;
+}
+
+[data-lf-translated] > .lf-trans.lf-style-underline {
+  border-bottom: 1px dashed color-mix(in srgb, currentColor 45%, transparent);
+  padding-bottom: 2px;
+}
+
+[data-lf-translated] > .lf-trans.lf-style-tinted {
+  background: rgba(99, 102, 241, 0.08);
+  border-left: 3px solid rgba(99, 102, 241, 0.5);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+html[data-lf-mode='translation-only'] [data-lf-translated] > .lf-original {
+  display: none !important;
+}
+
+html[data-lf-mode='original'] [data-lf-translated] > .lf-trans {
+  display: none !important;
+}
+
+html[data-lf-mode='side-by-side'] [data-lf-translated] {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 18px;
+  align-items: start;
+}
+
+html[data-lf-mode='side-by-side'] [data-lf-translated] > .lf-trans {
+  margin-top: 0;
+}

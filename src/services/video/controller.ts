@@ -31,7 +31,6 @@ export class SubtitleController {
   private video: HTMLVideoElement | null = null;
   private tracks: SubtitleTrack[] = [];
   private segments: SubtitleSegment[] = [];
-  private activeTrackId: string | undefined;
   private index = -1;
   private abLoop: { a: number; b: number } | null = null;
   private cleanup: Array<() => void> = [];
@@ -110,7 +109,6 @@ export class SubtitleController {
   selectTrack(trackId: string): void {
     const track = this.tracks.find((t) => t.id === trackId);
     if (!track) return;
-    this.activeTrackId = trackId;
     this.segments = [...track.segments].sort((a, b) => a.start - b.start);
     this.index = -1;
     this.setState({ activeTrackId: trackId, total: this.segments.length });

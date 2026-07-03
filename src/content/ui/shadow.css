@@ -1,0 +1,343 @@
+/* Styles inside the LinguaFlow shadow root. Isolated from the host page. */
+
+:host {
+  all: initial;
+}
+
+* {
+  box-sizing: border-box;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+}
+
+.lf-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2147483646;
+  --lf-bg: #ffffff;
+  --lf-fg: #1f2430;
+  --lf-fg-soft: #5b6472;
+  --lf-border: #e4e7ee;
+  --lf-accent: #6366f1;
+  --lf-accent-soft: rgba(99, 102, 241, 0.1);
+  --lf-shadow: 0 8px 30px rgba(15, 20, 40, 0.16), 0 2px 8px rgba(15, 20, 40, 0.08);
+  color: var(--lf-fg);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+@media (prefers-color-scheme: dark) {
+  .lf-layer {
+    --lf-bg: #23262f;
+    --lf-fg: #e8eaf0;
+    --lf-fg-soft: #9aa3b2;
+    --lf-border: #363b47;
+    --lf-accent: #818cf8;
+    --lf-accent-soft: rgba(129, 140, 248, 0.16);
+    --lf-shadow: 0 8px 30px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+}
+
+.lf-layer > * {
+  pointer-events: auto;
+}
+
+/* ---------- shared ---------- */
+
+.lf-card {
+  position: fixed;
+  background: var(--lf-bg);
+  border: 1px solid var(--lf-border);
+  border-radius: 12px;
+  box-shadow: var(--lf-shadow);
+  padding: 14px 16px;
+  max-width: 380px;
+  min-width: 260px;
+  max-height: 60vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.lf-btn {
+  appearance: none;
+  border: 1px solid var(--lf-border);
+  background: var(--lf-bg);
+  color: var(--lf-fg);
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+  white-space: nowrap;
+}
+
+.lf-btn:hover:not(:disabled) {
+  background: var(--lf-accent-soft);
+  border-color: var(--lf-accent);
+}
+
+.lf-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.lf-btn-primary {
+  background: var(--lf-accent);
+  border-color: var(--lf-accent);
+  color: #fff;
+}
+
+.lf-btn-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--lf-accent) 88%, #000);
+}
+
+.lf-btn:focus-visible {
+  outline: 2px solid var(--lf-accent);
+  outline-offset: 2px;
+}
+
+.lf-muted {
+  color: var(--lf-fg-soft);
+  font-size: 12px;
+}
+
+.lf-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.lf-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--lf-border);
+  border-top-color: var(--lf-accent);
+  border-radius: 50%;
+  animation: lf-spin 0.8s linear infinite;
+}
+
+@keyframes lf-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- selection toolbar ---------- */
+
+.lf-toolbar {
+  position: fixed;
+  display: flex;
+  gap: 4px;
+  background: var(--lf-bg);
+  border: 1px solid var(--lf-border);
+  border-radius: 10px;
+  box-shadow: var(--lf-shadow);
+  padding: 4px;
+}
+
+/* ---------- floating action buttons ---------- */
+
+.lf-fab-stack {
+  position: fixed;
+  right: 18px;
+  bottom: 96px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+
+.lf-fab {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 1px solid var(--lf-border);
+  background: var(--lf-bg);
+  color: var(--lf-fg);
+  box-shadow: var(--lf-shadow);
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.12s ease;
+}
+
+.lf-fab:hover {
+  transform: scale(1.07);
+}
+
+.lf-fab.lf-active {
+  background: var(--lf-accent);
+  border-color: var(--lf-accent);
+  color: #fff;
+}
+
+.lf-fab-progress {
+  font-size: 10px;
+  color: var(--lf-fg-soft);
+  background: var(--lf-bg);
+  border-radius: 6px;
+  padding: 1px 6px;
+  border: 1px solid var(--lf-border);
+}
+
+/* ---------- word / sentence cards ---------- */
+
+.lf-word {
+  font-size: 19px;
+  font-weight: 700;
+  margin-right: 8px;
+}
+
+.lf-ipa {
+  color: var(--lf-fg-soft);
+  font-size: 13px;
+}
+
+.lf-pos {
+  display: inline-block;
+  font-size: 11px;
+  color: var(--lf-accent);
+  background: var(--lf-accent-soft);
+  border-radius: 5px;
+  padding: 1px 6px;
+  margin-right: 6px;
+}
+
+.lf-cefr {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--lf-accent);
+  border-radius: 5px;
+  padding: 1px 6px;
+  margin-left: 6px;
+}
+
+.lf-sense {
+  margin: 8px 0;
+}
+
+.lf-sense-example {
+  color: var(--lf-fg-soft);
+  font-style: italic;
+  margin-top: 2px;
+  font-size: 12.5px;
+}
+
+.lf-ai-answer {
+  margin-top: 10px;
+  padding: 10px;
+  background: var(--lf-accent-soft);
+  border-radius: 8px;
+  white-space: pre-wrap;
+  font-size: 13px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.lf-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  border: none;
+  background: transparent;
+  color: var(--lf-fg-soft);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  padding: 4px;
+}
+
+.lf-close:hover {
+  color: var(--lf-fg);
+}
+
+/* ---------- subtitle panel ---------- */
+
+.lf-subtitle-panel {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 24px;
+  width: min(760px, calc(100vw - 40px));
+  min-width: 320px;
+  min-height: 120px;
+  background: var(--lf-bg);
+  border: 1px solid var(--lf-border);
+  border-radius: 14px;
+  box-shadow: var(--lf-shadow);
+  display: flex;
+  flex-direction: column;
+  resize: both;
+  overflow: auto;
+}
+
+.lf-subtitle-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--lf-border);
+  cursor: grab;
+  user-select: none;
+}
+
+.lf-subtitle-body {
+  padding: 12px 16px;
+  flex: 1;
+  text-align: center;
+}
+
+.lf-subtitle-original {
+  font-size: var(--lf-sub-size, 22px);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.lf-subtitle-translation {
+  font-size: calc(var(--lf-sub-size, 22px) * 0.82);
+  color: var(--lf-fg-soft);
+  margin-top: 6px;
+  line-height: 1.4;
+}
+
+.lf-subtitle-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px 12px;
+  flex-wrap: wrap;
+}
+
+.lf-select {
+  border: 1px solid var(--lf-border);
+  background: var(--lf-bg);
+  color: var(--lf-fg);
+  border-radius: 8px;
+  padding: 3px 6px;
+  font-size: 12.5px;
+}
+
+/* ---------- toast ---------- */
+
+.lf-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 40px;
+  transform: translateX(-50%);
+  background: var(--lf-fg);
+  color: var(--lf-bg);
+  border-radius: 10px;
+  padding: 8px 16px;
+  font-size: 13px;
+  box-shadow: var(--lf-shadow);
+}
