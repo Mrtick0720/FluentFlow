@@ -50,6 +50,8 @@ export interface UIState {
   playerMenu: { x: number; y: number } | null;
   /** Quick-translate scratchpad window (input → output with language pickers). */
   quickTranslateOpen: boolean;
+  /** Current translation service/model label (for the quick-translate footer). */
+  translationLabel: string;
   toast: string | null;
 }
 
@@ -70,6 +72,7 @@ const initial: UIState = {
   aiAvailable: false,
   playerMenu: null,
   quickTranslateOpen: false,
+  translationLabel: '',
   toast: null,
 };
 

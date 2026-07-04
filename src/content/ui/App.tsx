@@ -82,7 +82,7 @@ export function App({ actions }: { actions: UIActions }) {
       {ui.subtitleVisible && ui.subtitleState && <SubtitlePanel ui={ui} actions={actions} />}
       {ui.subtitleVisible && ui.transcriptVisible && <TranscriptPanel ui={ui} actions={actions} />}
       {ui.playerMenu && <PlayerMenu ui={ui} actions={actions} />}
-      {ui.quickTranslateOpen && <QuickTranslate actions={actions} />}
+      {ui.quickTranslateOpen && <QuickTranslate actions={actions} label={ui.translationLabel} />}
       <FabStack ui={ui} actions={actions} />
       {ui.toast && (
         <div className="lf-toast" role="status">
@@ -253,7 +253,7 @@ function SentenceCard({ ui, actions }: { ui: UIState; actions: UIActions }) {
 const QT_SOURCE = [{ code: 'auto', label: '自动检测' }, ...COMMON_LANGUAGES];
 
 /** Quick-translate scratchpad: type on the left, see the translation on the right. */
-function QuickTranslate({ actions }: { actions: UIActions }) {
+function QuickTranslate({ actions, label }: { actions: UIActions; label: string }) {
   const [from, setFrom] = useState('auto');
   const [to, setTo] = useState('zh-CN');
   const [input, setInput] = useState('');
@@ -339,7 +339,7 @@ function QuickTranslate({ actions }: { actions: UIActions }) {
           </div>
         </div>
         <div className="lf-qt-footer">
-          <span className="lf-muted">LinguaFlow · 快捷翻译</span>
+          <span className="lf-muted">{label || 'LinguaFlow'} · 快捷翻译</span>
           <button className="lf-btn" onClick={actions.closeQuickTranslate}>
             关闭
           </button>

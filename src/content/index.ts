@@ -610,8 +610,25 @@ async function main() {
     },
   };
 
+  function translationLabel(s: UserSettings): string {
+    const names: Record<string, string> = {
+      google: 'Google 翻译',
+      deepl: 'DeepL',
+      openai: 'OpenAI',
+      azure: 'Azure',
+    };
+    if (s.translationProvider === 'custom') {
+      return s.providers.custom?.model?.trim() || '自定义端点';
+    }
+    return names[s.translationProvider] ?? s.translationProvider;
+  }
+
   createRoot(mount).render(createElement(App, { actions }));
-  uiStore.set({ aiAvailable: settings.ai.kind !== 'none', subtitleStyle: settings.subtitleStyle });
+  uiStore.set({
+    aiAvailable: settings.ai.kind !== 'none',
+    subtitleStyle: settings.subtitleStyle,
+    translationLabel: translationLabel(settings),
+  });
 
   /* ---------- selection & word events ---------- */
 
@@ -691,7 +708,11 @@ async function main() {
     if (area !== 'local' || !changes['lf-settings']) return;
     void sendRequest('settings.get', null).then((next) => {
       settings = next;
-      uiStore.set({ aiAvailable: next.ai.kind !== 'none', subtitleStyle: next.subtitleStyle });
+      uiStore.set({
+        aiAvailable: next.ai.kind !== 'none',
+        subtitleStyle: next.subtitleStyle,
+        translationLabel: translationLabel(next),
+      });
       translator.setMode(next.displayMode);
     });
   });
