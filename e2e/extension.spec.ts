@@ -13,6 +13,9 @@ const FIXTURE_HTML = `<!doctype html>
     <p>Reading real articles is one of the best ways to learn a language.</p>
     <p>Subtitles and bilingual text make the process even smoother.</p>
   </article>
+  <!-- A sized video element so the content script's video-layout path runs
+       (regression guard for a startup crash that only triggered with video). -->
+  <video width="320" height="180" muted></video>
 </body></html>`;
 
 /**
@@ -88,8 +91,12 @@ test('loads the extension and translates a page end-to-end', async () => {
     }, `http://127.0.0.1:${port}/v1`);
 
     const page = await context.newPage();
+    const pageErrors: string[] = [];
+    page.on('pageerror', (e) => pageErrors.push(e.message));
     await page.goto(`http://127.0.0.1:${port}/`);
     await page.waitForSelector('#lf-host', { state: 'attached' });
+    // The content script must not throw at startup on a page with a video.
+    expect(pageErrors, pageErrors.join('\n')).toEqual([]);
 
     // Toggle page translation the way the toolbar/hotkey does: via a message
     // from the service worker to the tab's content script.

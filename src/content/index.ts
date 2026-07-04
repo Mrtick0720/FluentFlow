@@ -116,7 +116,8 @@ async function main() {
       setTimeout(() => detectVideo(attempt + 1), 1500);
     }
   }
-  detectVideo();
+  // detectVideo() is invoked after all `let` declarations below are
+  // initialized (it calls startVideoLayoutSync / toggleSubtitlePanel).
 
   // YouTube: a native-looking button in the player control bar opens the
   // quick-action menu (translate page / subtitles / styles / learning panel).
@@ -217,6 +218,9 @@ async function main() {
       }).catch(() => {});
     }
   }
+
+  // Everything the callback chain needs is now initialized — safe to start.
+  detectVideo();
 
   /* ---------- word & sentence cards ---------- */
 
