@@ -192,16 +192,6 @@ function nearbyVisibleSiblings(el: HTMLElement): HTMLElement[] {
   return out;
 }
 
-/** Live geometry snapshot: self overflow, clipping-ancestor overflow, sibling overlaps. */
-export function captureLayoutSnapshot(el: HTMLElement, siblings: HTMLElement[]): LayoutSnapshot {
-  const rect = el.getBoundingClientRect();
-  return {
-    selfOverflow: overflows(el),
-    clippingOverflow: clippingAncestors(el).map(overflows),
-    siblingOverlaps: siblings.map((sibling) => rectanglesOverlap(rect, sibling.getBoundingClientRect())),
-  };
-}
-
 /** The clipping ancestors and siblings a guard must reuse for before/after comparison. */
 export function layoutGuardTargets(el: HTMLElement): {
   clips: HTMLElement[];

@@ -9,6 +9,9 @@ const FIXTURE_HTML = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Fixture Article</title></head>
 <body>
   <nav><ul><li>World news today here</li></ul></nav>
+  <section class="hero">
+    <p id="hero">Breaking coverage of the summer league finals tonight</p>
+  </section>
   <article>
     <h1>Learning languages while reading</h1>
     <p id="body">Reading real articles is one of the best ways to learn a language.</p>
@@ -117,11 +120,14 @@ test('loads the extension and translates a page end-to-end', async () => {
     await expect(firstTranslation).toContainText('译文：', { timeout: 15_000 });
     await expect(page.locator('html')).toHaveAttribute('data-lf-mode', 'bilingual');
 
-    // Body paragraph stays bilingual (original visible below/above the translation).
+    // Body paragraph stays bilingual: both the original and the translation exist.
     await expect(page.locator('#body .lf-original')).toBeVisible();
-    // Nav item is translated in place (original hidden, no added block).
+    await expect(page.locator('#body .lf-trans')).toContainText('译文：');
+    // Hero content is translated in place (original hidden, no added block).
+    await expect(page.locator('#hero.lf-replaced')).toHaveCount(1);
+    await expect(page.locator('#hero .lf-original')).toBeHidden();
+    // Nav item is translated in place too.
     await expect(page.locator('nav li.lf-replaced')).toHaveCount(1);
-    await expect(page.locator('nav li .lf-original')).toBeHidden();
   } finally {
     await context.close();
     server.close();

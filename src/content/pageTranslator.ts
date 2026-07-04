@@ -2,13 +2,28 @@ import { ATTR_TRANSLATED } from '@/shared/constants';
 import type { DisplayMode } from '@/types/models';
 import { debounce } from '@/utils/async';
 import {
-  clippingAncestors,
   collectTranslatableBlocks,
+  introducesUnsafeLayout,
   isOccluded,
+  layoutGuardTargets,
   looksLikeTargetLanguage,
-  overflows,
   shouldReplaceInPlace,
+  snapshotWithTargets,
+  type LayoutSnapshot,
 } from '@/utils/dom';
+
+/**
+ * Snapshot an element's layout before a translation and expose a fresh
+ * after-snapshot, reusing the exact clipping ancestors and siblings selected
+ * before mutation so array positions stay comparable.
+ */
+function createLayoutGuard(el: HTMLElement): { before: LayoutSnapshot; after: () => LayoutSnapshot } {
+  const { clips, siblings } = layoutGuardTargets(el);
+  return {
+    before: snapshotWithTargets(el, clips, siblings),
+    after: () => snapshotWithTargets(el, clips, siblings),
+  };
+}
 
 export interface PageTranslatorOptions {
   translate: (texts: string[]) => Promise<string[]>;
@@ -147,13 +162,12 @@ export class PageTranslator {
         batch.forEach((el, i) => {
           const translation = translations[i];
           if (!translation || !el.isConnected) return;
-          // Layout guard: if translating overflows a previously-fitting clipped
-          // container (menus, cards, ellipsis boxes), revert — better to leave
-          // it untranslated than to break the layout / overlap the page.
-          const clips = clippingAncestors(el);
-          const before = clips.map(overflows);
+          // Layout guard: if the rendered translation newly overflows the
+          // element or a clipping ancestor, or newly overlaps a neighbour,
+          // revert — better untranslated than breaking the layout.
+          const layout = createLayoutGuard(el);
           this.applyTranslation(el, translation);
-          if (clips.some((a, j) => !before[j] && overflows(a))) {
+          if (introducesUnsafeLayout(layout.before, layout.after())) {
             this.revertTranslation(el);
           } else {
             applied++;
