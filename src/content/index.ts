@@ -104,7 +104,7 @@ async function main() {
 
   let autoSubtitleDone = false;
   function detectVideo(attempt = 0) {
-    if (document.querySelector('video')) {
+    if (isVideoPage() && findMainVideo()) {
       uiStore.set({ videoDetected: true });
       startVideoLayoutSync(); // pin the floating buttons to the video
       // Auto-open the bilingual subtitle panel on video sites, if enabled.
@@ -126,6 +126,19 @@ async function main() {
       const open = uiStore.get().playerMenu !== null;
       uiStore.set({ playerMenu: open ? null : { x: rect.left, y: rect.top } });
     });
+    // SPA navigation: leaving a watch page tears down the video UI (so the
+    // buttons/subtitle don't linger over the feed); entering one re-detects.
+    window.addEventListener('yt-navigate-finish', () => {
+      setTimeout(() => {
+        if (isVideoPage()) {
+          detectVideo();
+        } else {
+          if (uiStore.get().subtitleVisible) void toggleSubtitlePanel();
+          autoSubtitleDone = false;
+          uiStore.set({ videoDetected: false, videoRect: null, playerMenu: null });
+        }
+      }, 300);
+    });
   }
 
   // YouTube: once the player fetches captions (user enables CC), the page
@@ -143,11 +156,22 @@ async function main() {
     });
   }
 
+  // On YouTube, hover-preview thumbnails in the feed are real <video> elements.
+  // Only treat watch / shorts / embed pages as a video context so the buttons
+  // and subtitle panel don't appear over a list of thumbnails.
+  function isVideoPage(): boolean {
+    if (/(^|\.)youtube\.com$/.test(location.hostname)) {
+      return /^\/(watch|shorts|embed)\b/.test(location.pathname);
+    }
+    return true;
+  }
+
   // The largest visible <video> on the page — anchors the FAB + subtitle panel.
   function findMainVideo(): HTMLVideoElement | null {
+    if (!isVideoPage()) return null;
     const videos = [...document.querySelectorAll('video')].filter((v) => {
       const r = v.getBoundingClientRect();
-      return r.width > 0 && r.height > 0;
+      return r.width >= 200 && r.height >= 120;
     });
     if (videos.length === 0) return null;
     return videos.reduce((best, v) => {
