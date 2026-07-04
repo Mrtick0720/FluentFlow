@@ -289,6 +289,11 @@ async function main() {
     measure();
   }
 
+  // Set when an embedded player frame (e.g. YouTube in Khan Academy) reports a
+  // video. The player and its two lines live in the child; the top frame only
+  // offers the toggle and forwards the command.
+  let hasEmbeddedVideoFrame = false;
+
   // Forward the subtitle command to embedded player frames so their two-line
   // runtime toggles in lock-step. Only the command crosses the boundary.
   function broadcastSubtitleCommand(command: SubtitleFrameCommand) {
@@ -297,18 +302,29 @@ async function main() {
     }
   }
 
-  // An embed that becomes ready after the user already opened subtitles should
-  // catch up. Only our own validated message shape is honoured.
+  // A child frame (possibly relayed up through nesting) hosts a player. Expose
+  // the subtitle affordance and, if subtitles are already open, tell it to open.
   window.addEventListener('message', (event) => {
     if (!isFrameMessage(event.data)) return;
-    if (event.data.type === 'subtitle-frame-ready' && uiStore.get().subtitleVisible) {
-      (event.source as Window | null)?.postMessage(makeFrameCommand('open'), '*');
+    if (event.data.type === 'subtitle-frame-ready') {
+      hasEmbeddedVideoFrame = true;
+      if (!uiStore.get().videoDetected) uiStore.set({ videoDetected: true });
+      if (uiStore.get().subtitleVisible) broadcastSubtitleCommand('open');
     }
   });
 
   async function toggleSubtitlePanel() {
-    if (uiStore.get().subtitleVisible) {
-      broadcastSubtitleCommand('close');
+    const closing = uiStore.get().subtitleVisible;
+    broadcastSubtitleCommand(closing ? 'close' : 'open');
+
+    // No local video but an embedded frame has one: it renders the two lines
+    // itself, so don't attach / show a top-frame panel — just track the state.
+    if (!findMainVideo() && hasEmbeddedVideoFrame) {
+      uiStore.set({ subtitleVisible: !closing, transcript: [], transcriptVisible: false });
+      return;
+    }
+
+    if (closing) {
       subtitleController.detach();
       uiStore.set({
         subtitleVisible: false,
@@ -317,7 +333,6 @@ async function main() {
       });
       return;
     }
-    broadcastSubtitleCommand('open');
     uiStore.set({ subtitleVisible: true });
     const state = await subtitleController.attach(location.href);
     if (state.status === 'ready' && !videoWatchedRecorded) {
@@ -854,13 +869,29 @@ async function startChildSubtitleRuntime() {
   const poll = setInterval(announce, 1500);
   setTimeout(() => clearInterval(poll), 30_000);
 
+  const relayDown = (msg: unknown) => {
+    for (const frame of document.querySelectorAll('iframe')) {
+      frame.contentWindow?.postMessage(msg, '*');
+    }
+  };
+
   window.addEventListener('message', (event) => {
-    if (event.source !== window.parent || !isFrameMessage(event.data)) return;
+    if (!isFrameMessage(event.data)) return;
     const msg = event.data;
-    if (msg.type !== 'subtitle-command') return;
-    if (msg.command === 'open') void runtime.open();
-    else if (msg.command === 'close') runtime.close();
-    else void runtime.toggle();
+    // Commands flow down from the parent; relay to nested frames, and act only
+    // in the frame that actually hosts the player.
+    if (msg.type === 'subtitle-command' && event.source === window.parent) {
+      relayDown(msg);
+      if (!runtime.detect()) return;
+      if (msg.command === 'open') void runtime.open();
+      else if (msg.command === 'close') runtime.close();
+      else void runtime.toggle();
+      return;
+    }
+    // A descendant announced readiness; relay it up toward the top frame.
+    if (msg.type === 'subtitle-frame-ready' && event.source !== window.parent) {
+      window.parent?.postMessage(msg, '*');
+    }
   });
 
   window.addEventListener('pagehide', () => runtime.destroy());
