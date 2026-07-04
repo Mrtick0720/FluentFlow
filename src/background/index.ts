@@ -140,20 +140,25 @@ const MENU = {
 } as const;
 
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.contextMenus.create({
-    id: MENU.translateSelection,
-    title: 'LinguaFlow: 翻译选中文本',
-    contexts: ['selection'],
-  });
-  chrome.contextMenus.create({
-    id: MENU.togglePage,
-    title: 'LinguaFlow: 翻译/还原整页',
-    contexts: ['page'],
-  });
-  chrome.contextMenus.create({
-    id: MENU.openPanel,
-    title: 'LinguaFlow: 打开学习面板',
-    contexts: ['page', 'selection'],
+  // removeAll first: onInstalled also fires on update/reload, and recreating an
+  // existing menu id throws "Cannot create item with duplicate id" (surfaces as
+  // the extension card's red "错误" badge).
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({
+      id: MENU.translateSelection,
+      title: 'LinguaFlow: 翻译选中文本',
+      contexts: ['selection'],
+    });
+    chrome.contextMenus.create({
+      id: MENU.togglePage,
+      title: 'LinguaFlow: 翻译/还原整页',
+      contexts: ['page'],
+    });
+    chrome.contextMenus.create({
+      id: MENU.openPanel,
+      title: 'LinguaFlow: 打开学习面板',
+      contexts: ['page', 'selection'],
+    });
   });
 });
 
