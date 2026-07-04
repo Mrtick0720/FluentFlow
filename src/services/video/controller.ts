@@ -46,6 +46,8 @@ export class SubtitleController {
     tracks: [],
   };
   private liveTranslateToken = 0;
+  private liveDebounce: ReturnType<typeof setTimeout> | undefined;
+  private lastLiveText = '';
 
   constructor(
     private registry: VideoAdapterRegistry,
@@ -76,7 +78,7 @@ export class SubtitleController {
       this.cleanup.push(unsubscribe);
       const initial = this.adapter.getCurrentCaption();
       this.setState({ status: 'ready', mode: 'live', tracks: [] });
-      if (initial) void this.onLiveCaption(initial);
+      if (initial) this.onLiveCaption(initial);
     }
 
     const onRate = () => this.setState({ playbackRate: this.video?.playbackRate ?? 1 });
@@ -88,6 +90,9 @@ export class SubtitleController {
   detach(): void {
     this.cleanup.forEach((fn) => fn());
     this.cleanup = [];
+    clearTimeout(this.liveDebounce);
+    this.lastLiveText = '';
+    this.liveTranslateToken++;
     this.adapter = null;
     this.video = null;
     this.tracks = [];
@@ -243,19 +248,33 @@ export class SubtitleController {
     }
   }
 
-  private async onLiveCaption(caption: CaptionState | null): Promise<void> {
+  /**
+   * Live captions (e.g. YouTube) render word by word. Show the original text
+   * as it grows, but only translate once the caption has been stable for a
+   * moment — and keep the previous translation on screen until the new one
+   * arrives, so the panel doesn't flicker on every word.
+   */
+  private onLiveCaption(caption: CaptionState | null): void {
     const text = caption?.text ?? '';
+    if (text === this.lastLiveText) return;
+    this.lastLiveText = text;
+    // Empty gap between cues: keep the last line visible instead of blanking.
+    if (!text) return;
+    this.setState({ original: text });
+    clearTimeout(this.liveDebounce);
+    this.liveDebounce = setTimeout(() => void this.translateLive(text), 600);
+  }
+
+  private async translateLive(text: string): Promise<void> {
     const token = ++this.liveTranslateToken;
-    if (!text) {
-      this.setState({ original: '', translation: '' });
-      return;
-    }
-    this.setState({ original: text, translation: '…' });
     try {
       const [translation] = await this.deps.translate([text]);
-      if (token === this.liveTranslateToken) this.setState({ translation: translation ?? '' });
+      // Only apply if nothing newer superseded this request.
+      if (token === this.liveTranslateToken && this.lastLiveText === text) {
+        this.setState({ translation: translation ?? '' });
+      }
     } catch {
-      if (token === this.liveTranslateToken) this.setState({ translation: '' });
+      // keep the previous translation; the next stable caption retries
     }
   }
 }

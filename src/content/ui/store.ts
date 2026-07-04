@@ -1,4 +1,5 @@
 import type { SubtitleViewState } from '@/services/video/controller';
+import type { SubtitleStyle } from '@/shared/settings';
 import type { DictionaryEntry } from '@/types/models';
 
 export interface WordCardState {
@@ -34,6 +35,7 @@ export interface UIState {
   videoDetected: boolean;
   subtitleVisible: boolean;
   subtitleState: SubtitleViewState | null;
+  subtitleStyle: SubtitleStyle | null;
   pageActive: boolean;
   progress: { done: number; total: number };
   aiAvailable: boolean;
@@ -47,6 +49,7 @@ const initial: UIState = {
   videoDetected: false,
   subtitleVisible: false,
   subtitleState: null,
+  subtitleStyle: null,
   pageActive: false,
   progress: { done: 0, total: 0 },
   aiAvailable: false,

@@ -2,6 +2,13 @@ import type { DisplayMode, LanguageCode, TranslationProviderId } from '@/types/m
 
 export const SETTINGS_SCHEMA_VERSION = 1;
 
+/**
+ * Sentinel returned instead of stored API keys over RPC. Plaintext keys exist
+ * only inside the service worker; UIs see this marker and send it back
+ * unchanged unless the user typed a new key.
+ */
+export const REDACTED_KEY = '••••••••';
+
 export interface ProviderSettings {
   /** Stored obfuscated (AES-GCM with extension-local key); see utils/crypto. */
   apiKey?: string;

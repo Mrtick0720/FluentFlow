@@ -314,17 +314,31 @@ function SubtitlePanel({ ui, actions }: { ui: UIState; actions: UIActions }) {
           </button>
         </span>
       </div>
-      <div className="lf-subtitle-body">
+      <div
+        className="lf-subtitle-body"
+        style={
+          ui.subtitleStyle
+            ? ({ '--lf-sub-size': `${ui.subtitleStyle.fontSize}px` } as CSSProperties)
+            : undefined
+        }
+      >
         {s.status === 'no-video' && <div className="lf-muted">未检测到视频。</div>}
         {s.status === 'no-subtitles' && (
           <div className="lf-muted">
             此视频没有可用的字幕轨道。若播放器支持，请在播放器中开启字幕（CC）后重试。
           </div>
         )}
-        {s.status === 'ready' && (
+        {s.status === 'ready' && s.mode === 'live' && !s.original && (
+          <div className="lf-muted">等待字幕…（如无反应，请在播放器中开启字幕/CC）</div>
+        )}
+        {s.status === 'ready' && (s.mode === 'track' || s.original) && (
           <>
-            <div className="lf-subtitle-original">{s.original || '…'}</div>
-            <div className="lf-subtitle-translation">{s.translation}</div>
+            {(ui.subtitleStyle?.showOriginal ?? true) && (
+              <div className="lf-subtitle-original">{s.original || '…'}</div>
+            )}
+            {(ui.subtitleStyle?.showTranslation ?? true) && (
+              <div className="lf-subtitle-translation">{s.translation}</div>
+            )}
           </>
         )}
       </div>

@@ -396,8 +396,7 @@ async function main() {
   };
 
   createRoot(mount).render(createElement(App, { actions }));
-  void sendRequest('settings.get', null); // warm the worker
-  uiStore.set({ aiAvailable: settings.ai.kind !== 'none' });
+  uiStore.set({ aiAvailable: settings.ai.kind !== 'none', subtitleStyle: settings.subtitleStyle });
 
   /* ---------- selection & word events ---------- */
 
@@ -477,7 +476,7 @@ async function main() {
     if (area !== 'local' || !changes['lf-settings']) return;
     void sendRequest('settings.get', null).then((next) => {
       settings = next;
-      uiStore.set({ aiAvailable: next.ai.kind !== 'none' });
+      uiStore.set({ aiAvailable: next.ai.kind !== 'none', subtitleStyle: next.subtitleStyle });
       translator.setMode(next.displayMode);
     });
   });

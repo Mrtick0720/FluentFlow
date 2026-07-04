@@ -1,11 +1,38 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, Field, Section, SegmentedControl, Select, Switch, TextInput } from '@/components/ui';
 import { useSettings, useTheme } from '@/hooks/useSettings';
 import { COMMON_LANGUAGES } from '@/shared/constants';
 import { sendRequest } from '@/shared/messages';
-import type { UserSettings } from '@/shared/settings';
+import { REDACTED_KEY, type UserSettings } from '@/shared/settings';
 import type { Sentence, TranslationProviderId, Vocabulary } from '@/types/models';
 import { downloadFile, toCsv } from '@/utils/csv';
+
+/** Common OpenAI-compatible endpoints; picking one fills base URL + model. */
+const AI_PRESETS = [
+  { label: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
+  { label: 'Kimi（月之暗面）', baseUrl: 'https://api.moonshot.cn/v1', model: '' },
+  { label: '通义千问', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus' },
+  { label: '智谱 GLM', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-flash' },
+  { label: 'SiliconFlow', baseUrl: 'https://api.siliconflow.cn/v1', model: '' },
+  { label: 'Gemini（OpenAI 兼容）', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.0-flash' },
+  { label: 'Ollama（本地）', baseUrl: 'http://localhost:11434/v1', model: '' },
+];
+
+/**
+ * Ask Chrome for access to an endpoint's origin. Must run in the page (user
+ * gesture); routing it through the service worker loses the gesture and gets
+ * rejected.
+ */
+async function grantOrigin(rawUrl: string): Promise<boolean> {
+  try {
+    const origin = new URL(rawUrl).origin + '/*';
+    const already = await chrome.permissions.contains({ origins: [origin] });
+    if (already) return true;
+    return await chrome.permissions.request({ origins: [origin] });
+  } catch {
+    return false;
+  }
+}
 
 export function Options() {
   const { settings, update } = useSettings();
@@ -22,6 +49,8 @@ export function Options() {
 
   const setProvider = (id: TranslationProviderId, patch: Record<string, string>) =>
     void update({ providers: { ...settings.providers, [id]: { ...settings.providers[id], ...patch } } });
+
+  const setAI = (patch: Partial<UserSettings['ai']>) => void update({ ai: { ...settings.ai, ...patch } });
 
   async function exportBackup() {
     if (!settings) return;
@@ -156,79 +185,68 @@ export function Options() {
 
       <Section title="翻译引擎密钥">
         <Field label="DeepL API Key" hint="Free 计划的 key 以 :fx 结尾，自动使用 api-free 主机">
-          <TextInput
-            type="password"
-            value={settings.providers.deepl?.apiKey ?? ''}
-            placeholder="未设置"
-            onChange={(e) => setProvider('deepl', { apiKey: e.target.value })}
+          <SecretInput
+            stored={!!settings.providers.deepl?.apiKey}
+            onSave={(v) => {
+              setProvider('deepl', { apiKey: v });
+              flash('DeepL 密钥已保存');
+            }}
           />
         </Field>
         <Field label="OpenAI API Key">
-          <TextInput
-            type="password"
-            value={settings.providers.openai?.apiKey ?? ''}
-            placeholder="未设置"
-            onChange={(e) => setProvider('openai', { apiKey: e.target.value })}
+          <SecretInput
+            stored={!!settings.providers.openai?.apiKey}
+            onSave={(v) => {
+              setProvider('openai', { apiKey: v });
+              flash('OpenAI 密钥已保存');
+            }}
           />
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Azure Key">
-            <TextInput
-              type="password"
-              value={settings.providers.azure?.apiKey ?? ''}
-              placeholder="未设置"
-              onChange={(e) => setProvider('azure', { apiKey: e.target.value })}
+            <SecretInput
+              stored={!!settings.providers.azure?.apiKey}
+              onSave={(v) => {
+                setProvider('azure', { apiKey: v });
+                flash('Azure 密钥已保存');
+              }}
             />
           </Field>
           <Field label="Azure 区域">
-            <TextInput
+            <SavedInput
               value={settings.providers.azure?.region ?? ''}
               placeholder="如 eastasia"
-              onChange={(e) => setProvider('azure', { region: e.target.value })}
+              onSave={(v) => setProvider('azure', { region: v })}
             />
           </Field>
         </div>
         <div className="grid grid-cols-3 gap-3">
           <Field label="自定义端点 Base URL" hint="OpenAI 兼容，如 http://localhost:11434/v1">
-            <TextInput
+            <SavedInput
               value={settings.providers.custom?.baseUrl ?? ''}
               placeholder="https://…/v1"
-              onChange={(e) => setProvider('custom', { baseUrl: e.target.value })}
+              onSave={async (v) => {
+                setProvider('custom', { baseUrl: v });
+                if (v) flash((await grantOrigin(v)) ? '已保存并授权访问该端点' : '已保存（未授权，可能无法访问）');
+              }}
             />
           </Field>
           <Field label="模型">
-            <TextInput
+            <SavedInput
               value={settings.providers.custom?.model ?? ''}
               placeholder="如 qwen2.5"
-              onChange={(e) => setProvider('custom', { model: e.target.value })}
+              onSave={(v) => setProvider('custom', { model: v })}
             />
           </Field>
           <Field label="Key（可选）">
-            <TextInput
-              type="password"
-              value={settings.providers.custom?.apiKey ?? ''}
-              placeholder="未设置"
-              onChange={(e) => setProvider('custom', { apiKey: e.target.value })}
+            <SecretInput
+              stored={!!settings.providers.custom?.apiKey}
+              onSave={(v) => setProvider('custom', { apiKey: v })}
             />
           </Field>
         </div>
-        {settings.providers.custom?.baseUrl && (
-          <Button
-            onClick={async () => {
-              try {
-                const origin = new URL(settings.providers.custom!.baseUrl!).origin + '/*';
-                const { granted } = await sendRequest('permissions.requestOrigin', { origin });
-                flash(granted ? '已授权访问该端点' : '未授权');
-              } catch {
-                flash('Base URL 无效');
-              }
-            }}
-          >
-            为自定义端点授权访问权限
-          </Button>
-        )}
         <p className="text-xs text-slate-400">
-          密钥使用 AES-GCM 加密存储在本地（属于混淆级防护），只在后台 Service Worker 中解密，绝不上传。
+          密钥在输入框失焦或按回车时保存；使用 AES-GCM 加密存储在本地，只在后台解密，绝不上传。
         </p>
       </Section>
 
@@ -238,42 +256,75 @@ export function Options() {
             <Select
               className="w-full"
               value={settings.ai.kind}
-              onChange={(e) => void update({ ai: { ...settings.ai, kind: e.target.value as UserSettings['ai']['kind'] } })}
+              onChange={(e) => setAI({ kind: e.target.value as UserSettings['ai']['kind'] })}
             >
               <option value="none">未启用</option>
               <option value="anthropic">Anthropic (Claude)</option>
               <option value="openai">OpenAI</option>
-              <option value="custom">自定义（OpenAI 兼容）</option>
+              <option value="custom">其他模型（OpenAI 兼容端点）</option>
             </Select>
           </Field>
           <Field label="模型（可选）">
-            <TextInput
+            <SavedInput
               value={settings.ai.model ?? ''}
               placeholder="留空使用默认"
-              onChange={(e) => void update({ ai: { ...settings.ai, model: e.target.value } })}
+              onSave={(v) => setAI({ model: v })}
             />
           </Field>
         </div>
-        {settings.ai.kind !== 'none' && (
+        {settings.ai.kind === 'custom' && (
           <>
-            <Field label="API Key">
-              <TextInput
-                type="password"
-                value={settings.ai.apiKey ?? ''}
-                placeholder="未设置"
-                onChange={(e) => void update({ ai: { ...settings.ai, apiKey: e.target.value } })}
+            <Field label="常用端点预设" hint="DeepSeek、Kimi、通义、智谱、Ollama 等均为 OpenAI 兼容接口">
+              <Select
+                className="w-full"
+                value=""
+                onChange={async (e) => {
+                  const preset = AI_PRESETS.find((p) => p.label === e.target.value);
+                  if (!preset) return;
+                  setAI({ kind: 'custom', baseUrl: preset.baseUrl, model: preset.model || settings.ai.model });
+                  const granted = await grantOrigin(preset.baseUrl);
+                  flash(granted ? `已选择 ${preset.label} 并授权端点访问` : `已选择 ${preset.label}（未授权，请点击下方授权按钮）`);
+                }}
+              >
+                <option value="">选择预设…</option>
+                {AI_PRESETS.map((p) => (
+                  <option key={p.label} value={p.label}>
+                    {p.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Base URL">
+              <SavedInput
+                value={settings.ai.baseUrl ?? ''}
+                placeholder="https://…/v1"
+                onSave={async (v) => {
+                  setAI({ baseUrl: v });
+                  if (v) flash((await grantOrigin(v)) ? '已保存并授权' : '已保存（未授权）');
+                }}
               />
             </Field>
-            {settings.ai.kind === 'custom' && (
-              <Field label="Base URL">
-                <TextInput
-                  value={settings.ai.baseUrl ?? ''}
-                  placeholder="https://…/v1"
-                  onChange={(e) => void update({ ai: { ...settings.ai, baseUrl: e.target.value } })}
-                />
-              </Field>
+            {settings.ai.baseUrl && (
+              <Button
+                onClick={async () =>
+                  flash((await grantOrigin(settings.ai.baseUrl!)) ? '已授权访问该端点' : '未授权')
+                }
+              >
+                为该端点授权访问权限
+              </Button>
             )}
           </>
+        )}
+        {settings.ai.kind !== 'none' && (
+          <Field label="API Key">
+            <SecretInput
+              stored={!!settings.ai.apiKey}
+              onSave={(v) => {
+                setAI({ apiKey: v });
+                flash('AI 密钥已保存');
+              }}
+            />
+          </Field>
         )}
       </Section>
 
@@ -389,5 +440,62 @@ export function Options() {
         />
       </Section>
     </div>
+  );
+}
+
+/**
+ * API-key input. Keys are write-only: the stored value never appears in the
+ * field (the backend only ever returns a redaction mark), so this keeps its
+ * own draft state and commits on blur / Enter. Fixes the bug where saving on
+ * every keystroke echoed the redaction mark back into the field.
+ */
+function SecretInput({ stored, onSave }: { stored: boolean; onSave: (value: string) => void }) {
+  const [draft, setDraft] = useState('');
+  const commit = () => {
+    const v = draft.trim();
+    if (!v || v === REDACTED_KEY) return;
+    onSave(v);
+    setDraft('');
+  };
+  return (
+    <TextInput
+      type="password"
+      value={draft}
+      placeholder={stored ? '已保存（输入新密钥可更换）' : '未设置'}
+      autoComplete="off"
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') commit();
+      }}
+    />
+  );
+}
+
+/** Text input that commits on blur / Enter instead of every keystroke. */
+function SavedInput({
+  value,
+  onSave,
+  placeholder,
+}: {
+  value: string;
+  onSave: (value: string) => void;
+  placeholder?: string;
+}) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  const commit = () => {
+    if (draft !== value) onSave(draft.trim());
+  };
+  return (
+    <TextInput
+      value={draft}
+      placeholder={placeholder}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') commit();
+      }}
+    />
   );
 }

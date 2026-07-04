@@ -1,14 +1,9 @@
-import { DEFAULT_SETTINGS, migrateSettings, type UserSettings } from '@/shared/settings';
+import { DEFAULT_SETTINGS, migrateSettings, REDACTED_KEY, type UserSettings } from '@/shared/settings';
 import { openSecret, sealSecret } from '@/utils/crypto';
 
 const SETTINGS_KEY = 'lf-settings';
 
-/**
- * Sentinel returned instead of stored API keys over RPC. Plaintext keys exist
- * only inside the service worker; UIs see this marker and send it back
- * unchanged unless the user typed a new key.
- */
-export const REDACTED_KEY = '••••••••';
+export { REDACTED_KEY };
 
 async function mapSecrets(
   settings: UserSettings,
