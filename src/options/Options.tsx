@@ -576,8 +576,15 @@ function ModelPicker({
         </Button>
       </div>
       {models && models.length > 0 && (
-        <Select className="w-full" value={value} onChange={(e) => onSave(e.target.value)}>
-          <option value="">选择模型…（{models.length} 个）</option>
+        <Select
+          className="w-full"
+          value=""
+          onChange={(e) => {
+            if (e.target.value) onSave(e.target.value);
+            setModels(null); // used once — collapse so it doesn't duplicate the input
+          }}
+        >
+          <option value="">从 {models.length} 个可用模型中选择…</option>
           {models.map((m) => (
             <option key={m} value={m}>
               {m}
