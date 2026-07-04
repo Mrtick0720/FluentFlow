@@ -37,7 +37,9 @@ export interface PageTranslatorOptions {
 
 const MODE_ATTR = 'data-lf-mode';
 const BATCH_DEBOUNCE_MS = 120;
-const MAX_PER_FLUSH = 24;
+const MAX_PER_FLUSH = 16;
+/** Overlapping provider requests — the main lever for whole-page speed. */
+const MAX_CONCURRENT_FLUSHES = 3;
 
 /**
  * Translates page blocks lazily (viewport-first) and inserts translations
@@ -55,6 +57,8 @@ export class PageTranslator {
   private mo: MutationObserver | null = null;
   private queue = new Set<HTMLElement>();
   private inflight = new Set<HTMLElement>();
+  private activeFlushes = 0;
+  private spinners = new WeakMap<HTMLElement, HTMLElement>();
   private doneCount = 0;
   private totalCount = 0;
   private selfMutations = 0;
@@ -75,7 +79,7 @@ export class PageTranslator {
             this.io?.unobserve(entry.target);
           }
         }
-        this.flushSoon();
+        this.pumpSoon();
       },
       { rootMargin: '200px 0px' },
     );
@@ -98,11 +102,13 @@ export class PageTranslator {
     this.io = null;
     this.mo = null;
     this.queue.clear();
-    this.flushSoon.cancel();
+    this.activeFlushes = 0;
+    this.pumpSoon.cancel();
     this.rescanSoon.cancel();
     document.documentElement.removeAttribute(MODE_ATTR);
 
     this.withSelfMutation(() => {
+      for (const el of document.querySelectorAll<HTMLElement>('.lf-loading')) el.remove();
       for (const el of document.querySelectorAll<HTMLElement>(`[${ATTR_TRANSLATED}]`)) {
         const original = el.querySelector(':scope > .lf-original');
         el.querySelector(':scope > .lf-trans')?.remove();
@@ -138,7 +144,21 @@ export class PageTranslator {
     this.observeBlocks(collectTranslatableBlocks(document.body));
   }, 400);
 
-  private flushSoon = debounce(() => void this.flush(), BATCH_DEBOUNCE_MS);
+  private pumpSoon = debounce(() => this.pump(), BATCH_DEBOUNCE_MS);
+
+  /** Keep up to MAX_CONCURRENT_FLUSHES provider requests in flight at once. */
+  private pump(): void {
+    if (!this.active) return;
+    while (this.activeFlushes < MAX_CONCURRENT_FLUSHES && this.queue.size > 0) {
+      this.activeFlushes++;
+      // flush() runs synchronously through batch selection before its first
+      // await, so concurrent calls pick disjoint batches.
+      void this.flush().finally(() => {
+        this.activeFlushes--;
+        this.pump();
+      });
+    }
+  }
 
   private async flush(): Promise<void> {
     if (!this.active || this.queue.size === 0) return;
@@ -152,6 +172,8 @@ export class PageTranslator {
     });
     if (batch.length === 0) return;
     batch.forEach((el) => this.inflight.add(el));
+    // Tiny spinner after each paragraph so the user sees it loading.
+    this.withSelfMutation(() => batch.forEach((el) => this.showSpinner(el)));
 
     try {
       const texts = batch.map((el) => (el.textContent ?? '').replace(/\s+/g, ' ').trim());
@@ -160,6 +182,7 @@ export class PageTranslator {
       let applied = 0;
       this.withSelfMutation(() => {
         batch.forEach((el, i) => {
+          this.hideSpinner(el); // remove before applyTranslation moves children
           const translation = translations[i];
           if (!translation || !el.isConnected) return;
           // Layout guard: if the rendered translation newly overflows the
@@ -181,8 +204,26 @@ export class PageTranslator {
       batch.forEach((el) => this.queue.add(el));
       this.opts.onError?.(err instanceof Error ? err.message : String(err));
     } finally {
+      // Remove any spinners still up (error path / skipped elements).
+      this.withSelfMutation(() => batch.forEach((el) => this.hideSpinner(el)));
       batch.forEach((el) => this.inflight.delete(el));
-      if (this.queue.size > 0) this.flushSoon();
+    }
+  }
+
+  private showSpinner(el: HTMLElement): void {
+    if (this.spinners.has(el) || el.hasAttribute(ATTR_TRANSLATED)) return;
+    const spinner = document.createElement('span');
+    spinner.className = 'lf-loading';
+    spinner.setAttribute('aria-hidden', 'true');
+    el.appendChild(spinner);
+    this.spinners.set(el, spinner);
+  }
+
+  private hideSpinner(el: HTMLElement): void {
+    const spinner = this.spinners.get(el);
+    if (spinner) {
+      spinner.remove();
+      this.spinners.delete(el);
     }
   }
 

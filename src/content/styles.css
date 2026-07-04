@@ -47,6 +47,26 @@
   border: none;
 }
 
+/* Tiny inline spinner shown after a paragraph while it is being translated. */
+.lf-loading {
+  display: inline-block;
+  width: 0.8em;
+  height: 0.8em;
+  margin-left: 0.35em;
+  vertical-align: -0.05em;
+  border: 2px solid color-mix(in srgb, currentColor 28%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  opacity: 0.55;
+  animation: lf-spin 0.7s linear infinite;
+}
+
+@keyframes lf-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 html[data-lf-mode='translation-only'] [data-lf-translated] > .lf-original {
   display: none !important;
 }

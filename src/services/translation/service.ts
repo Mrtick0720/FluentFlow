@@ -67,18 +67,22 @@ export class TranslationService {
     }
 
     const batches = batchBy(missing, MAX_BATCH_SEGMENTS, MAX_BATCH_CHARS, (m) => m.text.length);
-    for (const batch of batches) {
-      const translated = await provider.translate(
-        { texts: batch.map((m) => m.text), from: req.from, to: req.to },
-        config,
-      );
-      for (let i = 0; i < batch.length; i++) {
-        const { index, key } = batch[i]!;
-        const value = translated[i] ?? '';
-        results[index] = value;
-        if (cacheEnabled && value) await cacheSet('translation', key, value, ttlMs);
-      }
-    }
+    // Sub-batches of one request run concurrently — LLM latency dominates, so
+    // overlapping requests translates the page far faster.
+    await Promise.all(
+      batches.map(async (batch) => {
+        const translated = await provider.translate(
+          { texts: batch.map((m) => m.text), from: req.from, to: req.to },
+          config,
+        );
+        for (let i = 0; i < batch.length; i++) {
+          const { index, key } = batch[i]!;
+          const value = translated[i] ?? '';
+          results[index] = value;
+          if (cacheEnabled && value) await cacheSet('translation', key, value, ttlMs);
+        }
+      }),
+    );
 
     return { translations: results, provider: providerId };
   }
