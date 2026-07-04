@@ -477,6 +477,53 @@
   margin-top: 2px;
 }
 
+/* ---------- player quick menu ---------- */
+
+.lf-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+}
+
+.lf-menu {
+  position: fixed;
+  z-index: 2;
+  background: var(--lf-bg);
+  border: 1px solid var(--lf-border);
+  border-radius: 12px;
+  box-shadow: var(--lf-shadow);
+  padding: 6px;
+}
+
+.lf-menu-title {
+  padding: 4px 10px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--lf-fg-soft);
+}
+
+.lf-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 9px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--lf-fg);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.lf-menu-item:hover:not(:disabled) {
+  background: var(--lf-accent-soft);
+}
+
+.lf-menu-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 /* ---------- toast ---------- */
 
 .lf-toast {

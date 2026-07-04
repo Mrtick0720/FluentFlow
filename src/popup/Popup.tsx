@@ -203,13 +203,33 @@ export function Popup() {
           </div>
         )}
 
-        {host && (
-          <div className="rounded-xl border border-slate-200 px-3 py-1 dark:border-slate-700">
-            <div className="pt-1 text-xs text-slate-400">{host}</div>
-            <Switch checked={always} onChange={(v) => void toggleSiteRule('autoTranslateSites', v)} label="总是翻译此站点" />
-            <Switch checked={never} onChange={(v) => void toggleSiteRule('neverTranslateSites', v)} label="从不自动翻译此站点" />
-          </div>
-        )}
+        <div className="rounded-xl border border-slate-200 px-3 py-1 dark:border-slate-700">
+          {host && <div className="pt-1 text-xs text-slate-400">{host}</div>}
+          {host && (
+            <Switch
+              checked={always}
+              onChange={(v) => void toggleSiteRule('autoTranslateSites', v)}
+              label="总是翻译此网站"
+            />
+          )}
+          <Switch
+            checked={settings.selectionEnabled}
+            onChange={(v) => void update({ selectionEnabled: v })}
+            label="划词翻译（选中弹出工具条）"
+          />
+          <Switch
+            checked={settings.autoSubtitleVideoSites}
+            onChange={(v) => void update({ autoSubtitleVideoSites: v })}
+            label="进入视频网站自动开双语字幕"
+          />
+          {host && (
+            <Switch
+              checked={never}
+              onChange={(v) => void toggleSiteRule('neverTranslateSites', v)}
+              label="从不自动翻译此网站"
+            />
+          )}
+        </div>
 
         <Button
           className="w-full"

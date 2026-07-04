@@ -68,6 +68,7 @@ export interface RequestMap {
   'models.list': { req: { target: 'translationCustom' | 'ai' }; res: { models: string[] } };
   'permissions.requestOrigin': { req: { origin: string }; res: { granted: boolean } };
   'sidepanel.open': { req: null; res: null };
+  'options.open': { req: { hash?: string }; res: null };
 }
 
 /** Messages the background sends to a tab's content script. */

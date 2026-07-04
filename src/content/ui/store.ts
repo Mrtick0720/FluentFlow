@@ -43,6 +43,8 @@ export interface UIState {
   pageActive: boolean;
   progress: { done: number; total: number };
   aiAvailable: boolean;
+  /** Quick-action menu anchored to the YouTube control-bar button. */
+  playerMenu: { x: number; y: number } | null;
   toast: string | null;
 }
 
@@ -60,6 +62,7 @@ const initial: UIState = {
   pageActive: false,
   progress: { done: 0, total: 0 },
   aiAvailable: false,
+  playerMenu: null,
   toast: null,
 };
 

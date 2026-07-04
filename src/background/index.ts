@@ -103,6 +103,11 @@ const router = new MessageRouter()
     const windowId = sender.tab?.windowId;
     if (windowId !== undefined) await chrome.sidePanel.open({ windowId });
     return null;
+  })
+  .on('options.open', async ({ hash }) => {
+    const url = chrome.runtime.getURL(`options.html${hash ? `#${hash}` : ''}`);
+    await chrome.tabs.create({ url });
+    return null;
   });
 
 router.listen();

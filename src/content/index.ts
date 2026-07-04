@@ -21,6 +21,7 @@ import type { UserSettings } from '@/shared/settings';
 import type { DisplayMode } from '@/types/models';
 import { extractPageText, sentenceAround } from '@/utils/dom';
 import { PageTranslator } from './pageTranslator';
+import { injectYouTubePlayerButton } from './youtubeButton';
 import { App, type UIActions } from './ui/App';
 import { showToast, uiStore } from './ui/store';
 
@@ -101,14 +102,29 @@ async function main() {
     onTranscript: (segments) => uiStore.set({ transcript: segments }),
   });
 
+  let autoSubtitleDone = false;
   function detectVideo(attempt = 0) {
     if (document.querySelector('video')) {
       uiStore.set({ videoDetected: true });
+      // Auto-open the bilingual subtitle panel on video sites, if enabled.
+      if (settings.autoSubtitleVideoSites && !autoSubtitleDone && !uiStore.get().subtitleVisible) {
+        autoSubtitleDone = true;
+        void toggleSubtitlePanel();
+      }
     } else if (attempt < 5) {
       setTimeout(() => detectVideo(attempt + 1), 1500);
     }
   }
   detectVideo();
+
+  // YouTube: a native-looking button in the player control bar opens the
+  // quick-action menu (translate page / subtitles / styles / learning panel).
+  if (/(^|\.)youtube\.com$/.test(location.hostname)) {
+    injectYouTubePlayerButton((rect) => {
+      const open = uiStore.get().playerMenu !== null;
+      uiStore.set({ playerMenu: open ? null : { x: rect.left, y: rect.top } });
+    });
+  }
 
   // YouTube: once the player fetches captions (user enables CC), the page
   // hook hands us a valid full-transcript URL — upgrade live mode to the
@@ -463,6 +479,8 @@ async function main() {
       ).then(() => actions.sentenceAI('grammar'));
     },
     openSidePanel: () => void sendRequest('sidepanel.open', null).catch(() => {}),
+    openSubtitleStyle: () => void sendRequest('options.open', { hash: 'subtitle' }).catch(() => {}),
+    closePlayerMenu: () => uiStore.set({ playerMenu: null }),
   };
 
   createRoot(mount).render(createElement(App, { actions }));
@@ -471,7 +489,7 @@ async function main() {
   /* ---------- selection & word events ---------- */
 
   document.addEventListener('mouseup', (e) => {
-    if (isOwnEvent(e)) return;
+    if (isOwnEvent(e) || !settings.selectionEnabled) return;
     // Defer so the selection is final (click clears, dblclick sets).
     setTimeout(() => {
       const info = currentSelectionInfo();

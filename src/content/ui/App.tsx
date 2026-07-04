@@ -30,6 +30,8 @@ export interface UIActions {
   subtitleToggleTranscript(): void;
   subtitleSeekTo(index: number): void;
   openSidePanel(): void;
+  openSubtitleStyle(): void;
+  closePlayerMenu(): void;
 }
 
 function useUI(): UIState {
@@ -52,6 +54,7 @@ export function App({ actions }: { actions: UIActions }) {
       {ui.sentenceCard && <SentenceCard ui={ui} actions={actions} />}
       {ui.subtitleVisible && ui.subtitleState && <SubtitlePanel ui={ui} actions={actions} />}
       {ui.subtitleVisible && ui.transcriptVisible && <TranscriptPanel ui={ui} actions={actions} />}
+      {ui.playerMenu && <PlayerMenu ui={ui} actions={actions} />}
       <FabStack ui={ui} actions={actions} />
       {ui.toast && (
         <div className="lf-toast" role="status">
@@ -216,6 +219,46 @@ function SentenceCard({ ui, actions }: { ui: UIState; actions: UIActions }) {
       )}
       {card.aiText && <div className="lf-ai-answer">{card.aiText}</div>}
     </div>
+  );
+}
+
+/** Quick-action menu opened from the YouTube control-bar button. */
+function PlayerMenu({ ui, actions }: { ui: UIState; actions: UIActions }) {
+  const { x, y } = ui.playerMenu!;
+  const items: Array<{ label: string; onClick: () => void; disabled?: boolean }> = [
+    { label: ui.subtitleVisible ? '关闭双语字幕' : '双语字幕学习', onClick: actions.toggleSubtitlePanel },
+    { label: ui.pageActive ? '还原整页' : '翻译整页', onClick: actions.togglePage },
+    { label: '字幕样式设置', onClick: actions.openSubtitleStyle },
+    { label: '学习面板（生词 · 句子 · AI）', onClick: actions.openSidePanel },
+  ];
+  // Anchor above the button, right-aligned to it.
+  const width = 220;
+  const style = {
+    left: Math.max(8, Math.min(x - width + 24, window.innerWidth - width - 8)),
+    top: Math.max(8, y - 8 - items.length * 40 - 16),
+    width,
+  };
+  return (
+    <>
+      <div className="lf-menu-backdrop" onClick={actions.closePlayerMenu} />
+      <div className="lf-menu" style={style} role="menu" aria-label="LinguaFlow 快捷菜单">
+        <div className="lf-menu-title">LinguaFlow</div>
+        {items.map((item) => (
+          <button
+            key={item.label}
+            className="lf-menu-item"
+            role="menuitem"
+            disabled={item.disabled}
+            onClick={() => {
+              actions.closePlayerMenu();
+              item.onClick();
+            }}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+    </>
   );
 }
 
