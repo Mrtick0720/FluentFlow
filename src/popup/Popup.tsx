@@ -1,17 +1,17 @@
-import { useEffect, useState } from 'react';
-import { Button, SegmentedControl, Select, Switch } from '@/components/ui';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Button, SegmentedControl, Switch } from '@/components/ui';
 import { activeTabHost, activeTabId } from '@/hooks/useActiveTab';
 import { useSettings, useTheme } from '@/hooks/useSettings';
 import { COMMON_LANGUAGES } from '@/shared/constants';
 import { sendRequest, sendToTab } from '@/shared/messages';
 import type { DisplayMode, StatsSnapshot, TranslationProviderId } from '@/types/models';
 
-const PROVIDERS: Array<{ value: TranslationProviderId; label: string }> = [
-  { value: 'google', label: 'Google（免费）' },
-  { value: 'deepl', label: 'DeepL' },
-  { value: 'openai', label: 'OpenAI' },
-  { value: 'azure', label: 'Azure' },
-  { value: 'custom', label: '自定义端点' },
+const PROVIDERS: Array<{ value: TranslationProviderId; label: string; icon: string }> = [
+  { value: 'google', label: '谷歌翻译（免费）', icon: '🌐' },
+  { value: 'deepl', label: 'DeepL', icon: '🇩🇪' },
+  { value: 'openai', label: 'OpenAI', icon: '🤖' },
+  { value: 'azure', label: 'Azure', icon: '☁️' },
+  { value: 'custom', label: '自定义端点', icon: '⚙️' },
 ];
 
 const MODES: Array<{ value: DisplayMode; label: string }> = [
@@ -21,6 +21,8 @@ const MODES: Array<{ value: DisplayMode; label: string }> = [
   { value: 'side-by-side', label: '左右对照' },
 ];
 
+const SOURCE_LANGUAGES = [{ code: 'auto', label: '自动检测' }, ...COMMON_LANGUAGES];
+
 export function Popup() {
   const { settings, update } = useSettings();
   useTheme(settings?.theme);
@@ -28,6 +30,7 @@ export function Popup() {
   const [pageActive, setPageActive] = useState(false);
   const [stats, setStats] = useState<StatsSnapshot>();
   const [busy, setBusy] = useState(false);
+  const version = chrome.runtime.getManifest().version;
 
   useEffect(() => {
     void activeTabHost().then(setHost);
@@ -35,11 +38,12 @@ export function Popup() {
   }, []);
 
   if (!settings) {
-    return <div className="w-[340px] p-6 text-center text-sm text-slate-400">加载中…</div>;
+    return <div className="w-[360px] p-6 text-center text-sm text-slate-400">加载中…</div>;
   }
 
   const always = host ? settings.autoTranslateSites.includes(host) : false;
   const never = host ? settings.neverTranslateSites.includes(host) : false;
+  const activeProvider = PROVIDERS.find((p) => p.value === settings.translationProvider);
 
   async function toggleTranslate() {
     const tabId = await activeTabId();
@@ -73,89 +77,140 @@ export function Popup() {
   }
 
   return (
-    <div className="w-[340px] space-y-3 p-4">
-      <header className="flex items-center justify-between">
+    <div className="flex w-[360px] flex-col">
+      <div className="space-y-3 p-4">
+        <header className="flex items-center gap-2">
+          <span className="inline-block h-6 w-6 rounded-lg bg-gradient-to-br from-indigo-500 to-teal-500" />
+          <span className="text-base font-bold">LinguaFlow</span>
+        </header>
+
+        {/* 源语言 → 目标语言 */}
         <div className="flex items-center gap-2">
-          <span className="inline-block h-5 w-5 rounded-md bg-gradient-to-br from-indigo-500 to-teal-500" />
-          <span className="text-sm font-bold">LinguaFlow</span>
-        </div>
-        <button
-          className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-          title="设置"
-          aria-label="打开设置"
-          onClick={() => chrome.runtime.openOptionsPage()}
-        >
-          ⚙
-        </button>
-      </header>
-
-      <Button variant="primary" className="w-full py-2 font-medium" onClick={toggleTranslate} disabled={busy}>
-        {busy ? '处理中…' : pageActive ? '还原此页' : '翻译此页（Alt+T）'}
-      </Button>
-
-      <SegmentedControl options={MODES} value={settings.displayMode} onChange={(m) => void setMode(m)} />
-
-      <div className="grid grid-cols-2 gap-2">
-        <label className="text-xs text-slate-500 dark:text-slate-400">
-          翻译引擎
-          <Select
-            className="mt-1 w-full"
-            value={settings.translationProvider}
-            onChange={(e) => void update({ translationProvider: e.target.value as TranslationProviderId })}
+          <BigSelect
+            value={settings.sourceLanguage}
+            onChange={(v) => void update({ sourceLanguage: v })}
+            aria-label="源语言"
           >
-            {PROVIDERS.map((p) => (
-              <option key={p.value} value={p.value}>
-                {p.label}
+            {SOURCE_LANGUAGES.map((l) => (
+              <option key={l.code} value={l.code}>
+                {l.label}
               </option>
             ))}
-          </Select>
-        </label>
-        <label className="text-xs text-slate-500 dark:text-slate-400">
-          目标语言
-          <Select
-            className="mt-1 w-full"
+          </BigSelect>
+          <span className="shrink-0 text-slate-400">→</span>
+          <BigSelect
             value={settings.targetLanguage}
-            onChange={(e) => void update({ targetLanguage: e.target.value })}
+            onChange={(v) => void update({ targetLanguage: v })}
+            aria-label="目标语言"
           >
             {COMMON_LANGUAGES.map((l) => (
               <option key={l.code} value={l.code}>
                 {l.label}
               </option>
             ))}
-          </Select>
-        </label>
+          </BigSelect>
+        </div>
+
+        {/* 翻译服务（醒目大下拉） */}
+        <div className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+          <div className="mb-1.5 text-xs text-slate-400">翻译服务</div>
+          <div className="relative flex items-center gap-2">
+            <span className="text-lg">{activeProvider?.icon ?? '🌐'}</span>
+            <select
+              className="w-full cursor-pointer appearance-none bg-transparent pr-6 text-sm font-semibold outline-none"
+              value={settings.translationProvider}
+              onChange={(e) =>
+                void update({ translationProvider: e.target.value as TranslationProviderId })
+              }
+              aria-label="翻译服务"
+            >
+              {PROVIDERS.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+            <span className="pointer-events-none absolute right-0 text-slate-400">▾</span>
+          </div>
+        </div>
+
+        <Button
+          variant="primary"
+          className="w-full py-2.5 text-base font-semibold"
+          onClick={toggleTranslate}
+          disabled={busy}
+        >
+          {busy ? '处理中…' : pageActive ? '还原此页（Alt+T）' : '翻译此页（Alt+T）'}
+        </Button>
+
+        <SegmentedControl options={MODES} value={settings.displayMode} onChange={(m) => void setMode(m)} />
+
+        {stats && (
+          <div className="flex justify-between rounded-xl bg-slate-50 px-3 py-2 text-center text-xs dark:bg-slate-800">
+            <Stat label="生词" value={stats.wordsLearned} />
+            <Stat label="句子" value={stats.sentencesCollected} />
+            <Stat label="阅读" value={`${Math.round(stats.readingTimeMs / 60000)}分`} />
+            <Stat label="视频" value={stats.videosWatched} />
+            <Stat label="文章" value={stats.articlesFinished} />
+          </div>
+        )}
+
+        {host && (
+          <div className="rounded-xl border border-slate-200 px-3 py-1 dark:border-slate-700">
+            <div className="pt-1 text-xs text-slate-400">{host}</div>
+            <Switch checked={always} onChange={(v) => void toggleSiteRule('autoTranslateSites', v)} label="总是翻译此站点" />
+            <Switch checked={never} onChange={(v) => void toggleSiteRule('neverTranslateSites', v)} label="从不自动翻译此站点" />
+          </div>
+        )}
+
+        <Button
+          className="w-full"
+          onClick={async () => {
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (tab?.windowId !== undefined) await chrome.sidePanel.open({ windowId: tab.windowId });
+            window.close();
+          }}
+        >
+          打开学习面板（生词本 · 句子本 · AI）
+        </Button>
       </div>
 
-      {host && (
-        <div className="rounded-xl border border-slate-200 px-3 py-1 dark:border-slate-700">
-          <div className="pt-1 text-xs text-slate-400">{host}</div>
-          <Switch checked={always} onChange={(v) => void toggleSiteRule('autoTranslateSites', v)} label="总是翻译此站点" />
-          <Switch checked={never} onChange={(v) => void toggleSiteRule('neverTranslateSites', v)} label="从不自动翻译此站点" />
-        </div>
-      )}
+      {/* 底部：左下角设置，中间版本号 */}
+      <div className="relative flex items-center border-t border-slate-200 px-4 py-2.5 dark:border-slate-700">
+        <button
+          className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100"
+          onClick={() => chrome.runtime.openOptionsPage()}
+        >
+          <span>⚙</span> 设置
+        </button>
+        <span className="absolute left-1/2 -translate-x-1/2 text-xs text-slate-400">V {version}</span>
+      </div>
+    </div>
+  );
+}
 
-      {stats && (
-        <div className="flex justify-between rounded-xl bg-slate-50 px-3 py-2 text-center text-xs dark:bg-slate-800">
-          <Stat label="生词" value={stats.wordsLearned} />
-          <Stat label="句子" value={stats.sentencesCollected} />
-          <Stat label="阅读" value={`${Math.round(stats.readingTimeMs / 60000)}分`} />
-          <Stat label="视频" value={stats.videosWatched} />
-          <Stat label="文章" value={stats.articlesFinished} />
-        </div>
-      )}
-
-      <Button
-        className="w-full"
-        onClick={async () => {
-          const tabId = await activeTabId();
-          const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-          if (tab?.windowId !== undefined) await chrome.sidePanel.open({ windowId: tab.windowId });
-          void tabId;
-          window.close();
-        }}
+function BigSelect({
+  value,
+  onChange,
+  children,
+  'aria-label': ariaLabel,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  children: ReactNode;
+  'aria-label': string;
+}) {
+  return (
+    <div className="relative flex-1">
+      <select
+        aria-label={ariaLabel}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full cursor-pointer appearance-none rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium outline-none focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-800"
       >
-        打开学习面板（生词本 · 句子本 · AI）
-      </Button>
+        {children}
+      </select>
+      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">▾</span>
     </div>
   );
 }
