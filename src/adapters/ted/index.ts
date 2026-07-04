@@ -1,9 +1,18 @@
 import { GenericHtml5Adapter } from '@/adapters/generic';
+import type { SubtitleTrack } from '@/types/models';
+
+/** English-first ordering, tolerant of `en`, `en-US`, `en-GB`, etc. */
+export function preferEnglishTracks(tracks: SubtitleTrack[]): SubtitleTrack[] {
+  return [...tracks].sort(
+    (a, b) => Number(/^en(?:-|$)/i.test(b.language)) - Number(/^en(?:-|$)/i.test(a.language)),
+  );
+}
 
 /**
  * TED serves standard HTML5 video with native subtitle tracks on talk pages,
- * so the generic textTrack path applies; this adapter pins the match and is
- * the extension point for TED-specific transcript handling.
+ * so the generic textTrack / <track> path applies. This adapter only reorders
+ * the publicly exposed tracks to put English first — it never bypasses login,
+ * DRM, or paywalls, and returns [] when no public subtitle source exists.
  */
 export class TedAdapter extends GenericHtml5Adapter {
   override readonly id = 'ted';
@@ -15,5 +24,11 @@ export class TedAdapter extends GenericHtml5Adapter {
     } catch {
       return false;
     }
+  }
+
+  override async getSubtitleTracks(): Promise<SubtitleTrack[]> {
+    // Only the tracks the page already exposes via <track> / textTracks.
+    const tracks = await super.getSubtitleTracks();
+    return preferEnglishTracks(tracks);
   }
 }

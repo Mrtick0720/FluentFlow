@@ -12,6 +12,8 @@ import {
   type SubtitleViewState,
 } from '@/services/video/controller';
 import { chooseCaptionText, normalizeCaptionText, YouTubeAdapter } from '@/adapters/youtube';
+import { preferEnglishTracks } from '@/adapters/ted';
+import type { SubtitleTrack } from '@/types/models';
 
 const SAMPLE_VTT = `WEBVTT
 
@@ -438,5 +440,22 @@ describe('YouTubeAdapter caption selection', () => {
     expect(adapter.match('https://www.youtube.com/embed/abc')).toBe(true);
     expect(adapter.match('https://www.youtube-nocookie.com/embed/abc')).toBe(true);
     expect(adapter.match('https://example.com/embed/abc')).toBe(false);
+  });
+});
+
+describe('preferEnglishTracks', () => {
+  it('puts an English-only track first without requiring a translated track', () => {
+    const tracks: SubtitleTrack[] = [
+      { id: 'en', label: 'English', language: 'en', kind: 'subtitles', segments: [] },
+    ];
+    expect(preferEnglishTracks(tracks).map((t) => t.id)).toEqual(['en']);
+  });
+
+  it('prefers English when several TED tracks are available', () => {
+    const tracks: SubtitleTrack[] = [
+      { id: 'fr', label: 'Français', language: 'fr', kind: 'subtitles', segments: [] },
+      { id: 'en', label: 'English', language: 'en-US', kind: 'subtitles', segments: [] },
+    ];
+    expect(preferEnglishTracks(tracks).map((t) => t.id)).toEqual(['en', 'fr']);
   });
 });

@@ -61,7 +61,7 @@ export class GenericHtml5Adapter implements VideoAdapter {
   }
 
   /** Try the corresponding <track src> and parse it as WebVTT. */
-  private async fetchTrackElement(
+  protected async fetchTrackElement(
     video: HTMLVideoElement,
     tt: TextTrack,
   ): Promise<SubtitleTrack['segments']> {
