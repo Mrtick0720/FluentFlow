@@ -44,6 +44,10 @@ export function Popup() {
   const always = host ? settings.autoTranslateSites.includes(host) : false;
   const never = host ? settings.neverTranslateSites.includes(host) : false;
   const activeProvider = PROVIDERS.find((p) => p.value === settings.translationProvider);
+  const customModel = settings.providers.custom?.model?.trim();
+  // For the custom endpoint, show the chosen model id instead of a generic label.
+  const providerLabel = (p: (typeof PROVIDERS)[number]) =>
+    p.value === 'custom' && customModel ? customModel : p.label;
 
   async function toggleTranslate() {
     const tabId = await activeTabId();
@@ -126,7 +130,7 @@ export function Popup() {
             >
               {PROVIDERS.map((p) => (
                 <option key={p.value} value={p.value}>
-                  {p.label}
+                  {providerLabel(p)}
                 </option>
               ))}
             </select>
