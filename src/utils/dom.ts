@@ -57,6 +57,8 @@ export function collectTranslatableBlocks(root: ParentNode): HTMLElement[] {
   return blocks;
 }
 
+type WithCheckVisibility = HTMLElement & { checkVisibility?: (options?: object) => boolean };
+
 function isRenderable(el: HTMLElement): boolean {
   const rects = el.getClientRects();
   if (rects.length === 0) return false;
@@ -66,9 +68,40 @@ function isRenderable(el: HTMLElement): boolean {
   if (rect.left > window.innerWidth + 2000 || rect.top > document.documentElement.scrollHeight + 2000) {
     return false;
   }
-  const style = getComputedStyle(el);
-  if (style.visibility === 'hidden' || style.visibility === 'collapse') return false;
-  if (parseFloat(style.opacity) === 0) return false;
+
+  // display:none / visibility:hidden / opacity:0 (INCLUDING ancestors) and
+  // content-visibility — this is what catches collapsed dropdown menus like
+  // NBA's "Teams" mega-menu, which hide the container via ancestor opacity.
+  const check = (el as WithCheckVisibility).checkVisibility;
+  if (typeof check === 'function') {
+    if (
+      !check.call(el, {
+        opacityProperty: true,
+        visibilityProperty: true,
+        contentVisibilityAuto: true,
+        // older option names (ignored if unknown)
+        checkOpacity: true,
+        checkVisibilityCSS: true,
+      })
+    ) {
+      return false;
+    }
+  } else {
+    const style = getComputedStyle(el);
+    if (style.visibility === 'hidden' || style.visibility === 'collapse') return false;
+    if (parseFloat(style.opacity) === 0) return false;
+  }
+
+  // Clipped to (near) nothing by an overflow-hidden ancestor (collapsed panels).
+  let node = el.parentElement;
+  for (let depth = 0; node && depth < 6; depth++) {
+    const s = getComputedStyle(node);
+    if (s.overflow !== 'visible' || s.overflowX !== 'visible' || s.overflowY !== 'visible') {
+      const r = node.getBoundingClientRect();
+      if (r.height <= 1 || r.width <= 1) return false;
+    }
+    node = node.parentElement;
+  }
   return true;
 }
 
