@@ -567,30 +567,49 @@ function PlayerMenu({ ui, actions }: { ui: UIState; actions: UIActions }) {
  * 设置/快捷翻译 sliding out on hover, and a 沉浸翻译 button. Defaults to the
  * right edge, vertically centered; draggable, with the position persisted.
  */
+const FAB_RIGHT_GAP = 10;
+
 function FloatingWidget({ ui, actions }: { ui: UIState; actions: UIActions }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const suppressClick = useRef(false);
   const draggingRef = useRef(false);
-  const livePos = useRef<{ left: number; top: number } | null>(null);
+  const liveTop = useRef<number | null>(null);
+  const [, forceTick] = useState(0);
+
+  // Re-clamp to the viewport when the window is resized/zoomed so the widget
+  // never drifts off-screen.
+  useEffect(() => {
+    const onResize = () => forceTick((n) => n + 1);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   // Hide during fullscreen video playback.
   if (ui.videoDetected && ui.isFullscreen) return null;
 
-  // During a drag we position imperatively (no React re-render); if the store
-  // re-renders us mid-drag, use the live position instead of the stale one.
-  const pos = draggingRef.current ? livePos.current : ui.fabPos;
-  const style: CSSProperties | undefined = pos
-    ? { left: pos.left, top: pos.top, right: 'auto', bottom: 'auto', transform: 'none' }
-    : undefined; // CSS default: right edge, vertically centered
+  // Always dock to the right edge; only the vertical position is adjustable and
+  // it's clamped to the current viewport (stale/off-screen positions snap back).
+  const savedTop = draggingRef.current ? liveTop.current : (ui.fabPos?.top ?? null);
+  const h = rootRef.current?.offsetHeight ?? 140;
+  const style: CSSProperties | undefined =
+    savedTop != null
+      ? {
+          right: FAB_RIGHT_GAP,
+          left: 'auto',
+          bottom: 'auto',
+          top: Math.max(4, Math.min(savedTop, window.innerHeight - h - 4)),
+          transform: 'none',
+        }
+      : undefined; // CSS default: right edge, vertically centered
 
-  // Press-and-drag moves the widget; a tap passes through to the button.
+  // Press-and-drag moves the widget vertically along the right edge; a tap
+  // passes through to the button.
   const onPointerDown = (e: ReactPointerEvent) => {
     const el = rootRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    const start = { sx: e.clientX, sy: e.clientY, ox: rect.left, oy: rect.top, moved: false };
-    const w = el.offsetWidth;
-    const h = el.offsetHeight;
+    const start = { sx: e.clientX, sy: e.clientY, oy: rect.top, moved: false };
+    const height = el.offsetHeight;
 
     const onMove = (ev: PointerEvent) => {
       const dx = ev.clientX - start.sx;
@@ -598,22 +617,21 @@ function FloatingWidget({ ui, actions }: { ui: UIState; actions: UIActions }) {
       if (!start.moved && Math.abs(dx) + Math.abs(dy) < 5) return; // tap threshold
       start.moved = true;
       draggingRef.current = true;
-      const left = Math.max(4, Math.min(start.ox + dx, window.innerWidth - w - 4));
-      const top = Math.max(4, Math.min(start.oy + dy, window.innerHeight - h - 4));
-      livePos.current = { left, top };
-      // Move the element directly for a smooth, jank-free drag.
-      el.style.left = `${left}px`;
+      const top = Math.max(4, Math.min(start.oy + dy, window.innerHeight - height - 4));
+      liveTop.current = top;
+      // Move the element directly (right edge fixed) for a smooth drag.
       el.style.top = `${top}px`;
-      el.style.right = 'auto';
+      el.style.right = `${FAB_RIGHT_GAP}px`;
+      el.style.left = 'auto';
       el.style.bottom = 'auto';
       el.style.transform = 'none';
     };
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
-      if (start.moved && livePos.current) {
+      if (start.moved && liveTop.current != null) {
         suppressClick.current = true; // swallow the click that ends the drag
-        actions.saveFabPos(livePos.current);
+        actions.saveFabPos({ left: 0, top: liveTop.current });
         draggingRef.current = false;
       }
     };
