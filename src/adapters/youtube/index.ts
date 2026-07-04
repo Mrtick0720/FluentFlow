@@ -2,6 +2,31 @@ import { GenericHtml5Adapter } from '@/adapters/generic';
 import type { CaptionState } from '@/services/video/adapter';
 import type { SubtitleTrack } from '@/types/models';
 
+export const normalizeCaptionText = (text: string): string => text.replace(/\s+/g, ' ').trim();
+
+export function chooseCaptionText(
+  candidates: Array<{ text: string; visible: boolean }>,
+): string {
+  return normalizeCaptionText(
+    candidates
+      .filter((candidate) => candidate.visible)
+      .map((candidate) => normalizeCaptionText(candidate.text))
+      .filter(Boolean)
+      .join(' '),
+  );
+}
+
+function isVisibleCaptionWindow(element: Element): boolean {
+  const node = element as HTMLElement;
+  const style = getComputedStyle(node);
+  return (
+    node.getClientRects().length > 0 &&
+    node.getAttribute('aria-hidden') !== 'true' &&
+    style.display !== 'none' &&
+    style.visibility !== 'hidden'
+  );
+}
+
 /**
  * YouTube renders captions into the player DOM rather than exposing text
  * track cues, so this adapter works in "live mode": it observes the caption
@@ -32,12 +57,22 @@ export class YouTubeAdapter extends GenericHtml5Adapter {
   }
 
   override getCurrentCaption(): CaptionState | null {
-    const segments = [...document.querySelectorAll('.ytp-caption-segment')]
-      .map((el) => el.textContent?.trim() ?? '')
-      .filter(Boolean);
-    if (segments.length > 0) {
+    const windows = [...document.querySelectorAll('.ytp-caption-window-container .caption-window')];
+    const candidates = windows.map((window) => ({
+      text: [...window.querySelectorAll('.ytp-caption-segment')]
+        .map((segment) => segment.textContent ?? '')
+        .join(' '),
+      visible: isVisibleCaptionWindow(window),
+    }));
+    const fallback = [...document.querySelectorAll('.ytp-caption-segment')]
+      .map((segment) => segment.textContent ?? '')
+      .join(' ');
+    const text = windows.length > 0
+      ? chooseCaptionText(candidates)
+      : normalizeCaptionText(fallback);
+    if (text) {
       const video = this.getVideo();
-      return { text: segments.join(' '), start: video?.currentTime };
+      return { text, start: video?.currentTime };
     }
     return super.getCurrentCaption();
   }

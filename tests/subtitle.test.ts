@@ -6,6 +6,7 @@ import {
   type VideoAdapter,
 } from '@/services/video/adapter';
 import { SubtitleController, type SubtitleViewState } from '@/services/video/controller';
+import { chooseCaptionText, normalizeCaptionText } from '@/adapters/youtube';
 
 const SAMPLE_VTT = `WEBVTT
 
@@ -206,5 +207,21 @@ describe('SubtitleController live captions', () => {
       translation: '',
       translating: false,
     });
+  });
+});
+
+describe('YouTubeAdapter caption selection', () => {
+  it('normalizes whitespace before comparing caption mutations', () => {
+    expect(normalizeCaptionText('  And  you\nare   going  ')).toBe('And you are going');
+  });
+
+  it('uses visible caption windows and ignores hidden stale text', () => {
+    expect(
+      chooseCaptionText([
+        { text: 'Old caption', visible: false },
+        { text: ' Current   caption ', visible: true },
+        { text: 'continues', visible: true },
+      ]),
+    ).toBe('Current caption continues');
   });
 });
