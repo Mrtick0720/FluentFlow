@@ -125,7 +125,7 @@ export function Options() {
   return (
     <div className="mx-auto max-w-2xl space-y-4 p-6 pb-16">
       <header className="flex items-center gap-3">
-        <span className="inline-block h-7 w-7 rounded-lg bg-gradient-to-br from-indigo-500 to-teal-500" />
+        <img src={chrome.runtime.getURL('icons/icon48.png')} alt="" className="h-7 w-7 rounded-lg" />
         <div>
           <h1 className="text-lg font-bold">LinguaFlow 设置</h1>
           <p className="text-xs text-slate-400">双语阅读 · 视频字幕学习 · AI 助手 — 默认本地存储，注重隐私</p>

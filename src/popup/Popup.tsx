@@ -126,7 +126,7 @@ export function Popup() {
     <div className="flex w-[360px] flex-col">
       <div className="space-y-3 p-4">
         <header className="flex items-center gap-2">
-          <span className="inline-block h-6 w-6 rounded-lg bg-gradient-to-br from-indigo-500 to-teal-500" />
+          <img src={chrome.runtime.getURL('icons/icon48.png')} alt="" className="h-6 w-6 rounded-lg" />
           <span className="text-base font-bold">LinguaFlow</span>
         </header>
 
