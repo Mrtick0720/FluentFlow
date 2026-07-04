@@ -11,7 +11,7 @@ import {
   SubtitleController,
   type SubtitleViewState,
 } from '@/services/video/controller';
-import { chooseCaptionText, normalizeCaptionText } from '@/adapters/youtube';
+import { chooseCaptionText, normalizeCaptionText, YouTubeAdapter } from '@/adapters/youtube';
 
 const SAMPLE_VTT = `WEBVTT
 
@@ -431,5 +431,12 @@ describe('YouTubeAdapter caption selection', () => {
         { text: 'continues', visible: true },
       ]),
     ).toBe('Current caption continues');
+  });
+
+  it('matches standard and privacy-enhanced YouTube embeds', () => {
+    const adapter = new YouTubeAdapter();
+    expect(adapter.match('https://www.youtube.com/embed/abc')).toBe(true);
+    expect(adapter.match('https://www.youtube-nocookie.com/embed/abc')).toBe(true);
+    expect(adapter.match('https://example.com/embed/abc')).toBe(false);
   });
 });

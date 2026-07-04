@@ -40,7 +40,8 @@ export class YouTubeAdapter extends GenericHtml5Adapter {
   override match(url: string): boolean {
     try {
       const host = new URL(url).hostname;
-      return host === 'www.youtube.com' || host === 'youtube.com' || host === 'm.youtube.com';
+      // Standard, mobile, and privacy-enhanced (embedded) YouTube hosts.
+      return /(^|\.)(youtube\.com|youtube-nocookie\.com)$/.test(host);
     } catch {
       return false;
     }
