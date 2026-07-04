@@ -10,12 +10,13 @@ import { downloadFile, toCsv } from '@/utils/csv';
 /** Common OpenAI-compatible endpoints; picking one fills base URL + model. */
 const AI_PRESETS = [
   { label: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
-  { label: 'Kimi（月之暗面）', baseUrl: 'https://api.moonshot.cn/v1', model: '' },
+  { label: 'Gemini（OpenAI 兼容）', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.0-flash' },
+  { label: 'Kimi（月之暗面）', baseUrl: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k' },
   { label: '通义千问', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus' },
   { label: '智谱 GLM', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-flash' },
-  { label: 'SiliconFlow', baseUrl: 'https://api.siliconflow.cn/v1', model: '' },
-  { label: 'Gemini（OpenAI 兼容）', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.0-flash' },
-  { label: 'Ollama（本地）', baseUrl: 'http://localhost:11434/v1', model: '' },
+  { label: 'SiliconFlow', baseUrl: 'https://api.siliconflow.cn/v1', model: 'deepseek-ai/DeepSeek-V3' },
+  { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini' },
+  { label: 'Ollama（本地）', baseUrl: 'http://localhost:11434/v1', model: 'llama3.1' },
 ];
 
 /**
@@ -220,6 +221,26 @@ export function Options() {
             />
           </Field>
         </div>
+        <Field label="常用端点预设" hint="选择后自动填入 Base URL 和模型，再填对应服务的 API Key">
+          <Select
+            className="w-full"
+            value=""
+            onChange={async (e) => {
+              const preset = AI_PRESETS.find((p) => p.label === e.target.value);
+              if (!preset) return;
+              setProvider('custom', { baseUrl: preset.baseUrl, model: preset.model });
+              const granted = await grantOrigin(preset.baseUrl);
+              flash(granted ? `已填入 ${preset.label} 端点并授权` : `已填入 ${preset.label}（未授权）`);
+            }}
+          >
+            <option value="">选择预设…（DeepSeek、Gemini、Kimi、通义…）</option>
+            {AI_PRESETS.map((p) => (
+              <option key={p.label} value={p.label}>
+                {p.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
         <div className="grid grid-cols-3 gap-3">
           <Field label="自定义端点 Base URL" hint="OpenAI 兼容，需带 /v1，如 https://free.v36.cm/v1">
             <SavedInput
