@@ -595,15 +595,16 @@
 .lf-qt {
   position: fixed;
   left: 50%;
-  top: 12vh;
+  top: 14vh;
   transform: translateX(-50%);
-  width: min(760px, calc(100vw - 32px));
+  width: min(640px, calc(100vw - 32px));
   background: var(--lf-bg);
   border: 1px solid var(--lf-border);
   border-radius: 16px;
   box-shadow: var(--lf-shadow);
   z-index: 2;
   overflow: hidden;
+  cursor: default;
 }
 
 .lf-qt-cols {
@@ -619,8 +620,14 @@
   padding: 12px 14px;
 }
 
-.lf-qt-col:last-child {
+/* Subtle color-block difference between input (left) and output (right). */
+.lf-qt-col-in {
+  background: color-mix(in srgb, var(--lf-fg) 5%, transparent);
+}
+
+.lf-qt-col-out {
   border-left: 1px solid var(--lf-border);
+  background: color-mix(in srgb, var(--lf-accent) 6%, transparent);
 }
 
 .lf-qt-lang {
@@ -638,7 +645,8 @@
 .lf-qt-input,
 .lf-qt-output {
   flex: 1;
-  min-height: 150px;
+  min-height: 190px;
+  max-height: 46vh;
   font-size: 16px;
   line-height: 1.5;
   color: var(--lf-fg);
@@ -659,27 +667,67 @@
 
 .lf-qt-swap {
   align-self: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
   border: 1px solid var(--lf-border);
   background: var(--lf-bg);
-  color: var(--lf-fg);
+  color: var(--lf-fg-soft);
   cursor: pointer;
-  font-size: 16px;
+  font-size: 13px;
 }
 
 .lf-qt-swap:hover {
   background: var(--lf-accent-soft);
   border-color: var(--lf-accent);
+  color: var(--lf-accent);
 }
 
 .lf-qt-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
   padding: 8px 14px;
   border-top: 1px solid var(--lf-border);
+  cursor: move;
+}
+
+.lf-qt-model {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lf-qt-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.lf-qt-iconbtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--lf-border);
+  background: var(--lf-bg);
+  color: var(--lf-fg-soft);
+  cursor: pointer;
+}
+
+.lf-qt-iconbtn:hover:not(:disabled) {
+  color: var(--lf-accent);
+  border-color: var(--lf-accent);
+}
+
+.lf-qt-iconbtn:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 /* ---------- toast ---------- */

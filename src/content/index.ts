@@ -667,6 +667,11 @@ async function main() {
       openai: 'OpenAI',
       azure: 'Azure',
     };
+    if (s.translationProvider.startsWith('custom:')) {
+      const id = s.translationProvider.slice('custom:'.length);
+      const ep = s.customEndpoints.find((e) => e.id === id);
+      return ep?.name?.trim() || ep?.model?.trim() || '自定义端点';
+    }
     if (s.translationProvider === 'custom') {
       return s.providers.custom?.model?.trim() || '自定义端点';
     }

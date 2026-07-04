@@ -336,6 +336,11 @@ function QuickTranslate({ actions, label }: { actions: UIActions; label: string 
     return () => clearTimeout(timer);
   }, [input, from, to, actions]);
 
+  const [copied, setCopied] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+
   const swap = () => {
     setFrom(to);
     setTo(from === 'auto' ? 'en' : from);
@@ -343,12 +348,59 @@ function QuickTranslate({ actions, label }: { actions: UIActions; label: string 
     setOutput(input);
   };
 
+  const copy = async () => {
+    if (!output) return;
+    try {
+      await navigator.clipboard.writeText(output);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch {
+      /* clipboard blocked */
+    }
+  };
+
+  // Drag from any non-interactive chrome (not the inputs/selects/buttons).
+  const onPointerDown = (e: ReactPointerEvent) => {
+    const el = e.target as HTMLElement;
+    if (el.closest('select, textarea, input, button, .lf-qt-output')) return;
+    const rect = rootRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    dragRef.current = { sx: e.clientX, sy: e.clientY, ox: rect.left, oy: rect.top };
+    const w = rect.width;
+    const onMove = (ev: PointerEvent) => {
+      const d = dragRef.current;
+      if (!d) return;
+      setPos({
+        left: Math.max(4, Math.min(d.ox + (ev.clientX - d.sx), window.innerWidth - w - 4)),
+        top: Math.max(4, Math.min(d.oy + (ev.clientY - d.sy), window.innerHeight - 40)),
+      });
+    };
+    const onUp = () => {
+      dragRef.current = null;
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+
+  const style: CSSProperties | undefined = pos
+    ? { left: pos.left, top: pos.top, transform: 'none' }
+    : undefined;
+
   return (
     <>
       <div className="lf-qt-backdrop" onClick={actions.closeQuickTranslate} />
-      <div className="lf-qt" role="dialog" aria-label="快捷翻译">
+      <div
+        className="lf-qt"
+        ref={rootRef}
+        style={style}
+        onPointerDown={onPointerDown}
+        role="dialog"
+        aria-label="快捷翻译"
+      >
         <div className="lf-qt-cols">
-          <div className="lf-qt-col">
+          <div className="lf-qt-col lf-qt-col-in">
             <select
               className="lf-qt-lang"
               value={from}
@@ -374,7 +426,7 @@ function QuickTranslate({ actions, label }: { actions: UIActions; label: string 
             ⇄
           </button>
 
-          <div className="lf-qt-col">
+          <div className="lf-qt-col lf-qt-col-out">
             <select
               className="lf-qt-lang"
               value={to}
@@ -393,15 +445,33 @@ function QuickTranslate({ actions, label }: { actions: UIActions; label: string 
           </div>
         </div>
         <div className="lf-qt-footer">
-          <span className="lf-muted">{label || 'LinguaFlow'} · 快捷翻译</span>
-          <button className="lf-btn" onClick={actions.closeQuickTranslate}>
-            关闭
-          </button>
+          <span className="lf-muted lf-qt-model">{label || 'LinguaFlow'} · 快捷翻译</span>
+          <div className="lf-qt-actions">
+            <button
+              className="lf-qt-iconbtn"
+              onClick={copy}
+              disabled={!output}
+              title="复制译文"
+              aria-label="复制译文"
+            >
+              {copied ? '✓' : <CopyIcon />}
+            </button>
+            <button className="lf-btn" onClick={actions.closeQuickTranslate}>
+              关闭
+            </button>
+          </div>
         </div>
       </div>
     </>
   );
 }
+
+const CopyIcon = () => (
+  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="9" y="9" width="11" height="11" rx="2" />
+    <path d="M5 15V5a2 2 0 0 1 2-2h10" />
+  </svg>
+);
 
 /** Quick-action menu opened from the YouTube control-bar button. */
 function PlayerMenu({ ui, actions }: { ui: UIState; actions: UIActions }) {
