@@ -52,6 +52,8 @@ export interface UIState {
   quickTranslateOpen: boolean;
   /** Current translation service/model label (for the quick-translate footer). */
   translationLabel: string;
+  /** Dragged position of the floating widget; null = default (right, centered). */
+  fabPos: { left: number; top: number } | null;
   toast: string | null;
 }
 
@@ -73,6 +75,7 @@ const initial: UIState = {
   playerMenu: null,
   quickTranslateOpen: false,
   translationLabel: '',
+  fabPos: null,
   toast: null,
 };
 

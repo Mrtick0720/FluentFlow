@@ -55,6 +55,8 @@ export interface UserSettings {
   autoSubtitleSites: string[];
   autoTranslateSites: string[]; // hostnames
   neverTranslateSites: string[]; // hostnames
+  /** Dragged position of the floating widget; null = default (right, centered). */
+  fabPos: { left: number; top: number } | null;
   privacy: {
     cloudSync: boolean; // reserved; no backend in v0.1
   };
@@ -88,6 +90,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   autoSubtitleSites: [],
   autoTranslateSites: [],
   neverTranslateSites: [],
+  fabPos: null,
   privacy: { cloudSync: false },
   cache: { enabled: true, ttlHours: 24 * 14 },
 };

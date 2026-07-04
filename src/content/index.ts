@@ -608,6 +608,11 @@ async function main() {
       }
       togglePage();
     },
+    setFabPos: (pos) => uiStore.set({ fabPos: pos }),
+    saveFabPos: (pos) => {
+      uiStore.set({ fabPos: pos });
+      void sendRequest('settings.set', { patch: { fabPos: pos } }).catch(() => {});
+    },
   };
 
   function translationLabel(s: UserSettings): string {
@@ -628,6 +633,7 @@ async function main() {
     aiAvailable: settings.ai.kind !== 'none',
     subtitleStyle: settings.subtitleStyle,
     translationLabel: translationLabel(settings),
+    fabPos: settings.fabPos,
   });
 
   /* ---------- selection & word events ---------- */

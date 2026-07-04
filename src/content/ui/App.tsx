@@ -39,6 +39,8 @@ export interface UIActions {
   immersiveTranslate(): void;
   closeQuickTranslate(): void;
   translateText(text: string, from: string, to: string): Promise<string>;
+  setFabPos(pos: { left: number; top: number }): void;
+  saveFabPos(pos: { left: number; top: number }): void;
 }
 
 const GearIcon = () => (
@@ -83,7 +85,7 @@ export function App({ actions }: { actions: UIActions }) {
       {ui.subtitleVisible && ui.transcriptVisible && <TranscriptPanel ui={ui} actions={actions} />}
       {ui.playerMenu && <PlayerMenu ui={ui} actions={actions} />}
       {ui.quickTranslateOpen && <QuickTranslate actions={actions} label={ui.translationLabel} />}
-      <FabStack ui={ui} actions={actions} />
+      <FloatingWidget ui={ui} actions={actions} />
       {ui.toast && (
         <div className="lf-toast" role="status">
           {ui.toast}
@@ -353,9 +355,18 @@ function QuickTranslate({ actions, label }: { actions: UIActions; label: string 
 function PlayerMenu({ ui, actions }: { ui: UIState; actions: UIActions }) {
   const { x, y } = ui.playerMenu!;
   const items: Array<{ label: string; onClick: () => void; disabled?: boolean }> = [
-    { label: ui.subtitleVisible ? '关闭双语字幕' : '双语字幕学习', onClick: actions.toggleSubtitlePanel },
-    { label: ui.pageActive ? '还原整页' : '翻译整页', onClick: actions.togglePage },
-    { label: '字幕样式设置', onClick: actions.openSubtitleStyle },
+    // Subtitle actions only make sense on a video page.
+    ...(ui.videoDetected
+      ? [
+          {
+            label: ui.subtitleVisible ? '关闭双语字幕' : '双语字幕学习',
+            onClick: actions.toggleSubtitlePanel,
+          },
+          { label: '字幕样式设置', onClick: actions.openSubtitleStyle },
+        ]
+      : []),
+    { label: ui.pageActive ? '还原整页' : '沉浸翻译（双语）', onClick: actions.immersiveTranslate },
+    { label: '快捷翻译', onClick: actions.quickTranslate },
     { label: '学习面板（生词 · 句子 · AI）', onClick: actions.openSidePanel },
   ];
   // Anchor above the button, right-aligned to it.
@@ -389,94 +400,116 @@ function PlayerMenu({ ui, actions }: { ui: UIState; actions: UIActions }) {
   );
 }
 
-function FabStack({ ui, actions }: { ui: UIState; actions: UIActions }) {
-  // When a video is present, pin the stack to the video's right edge, vertically
-  // centered — so it stays beside the video instead of the viewport corner as
-  // the window narrows. Otherwise fall back to the CSS default (viewport
-  // bottom-right) for article pages.
-  const v = ui.videoRect;
-  // Anchor to the video's right edge, ~60% down its height (lower area).
-  const anchored =
-    v && v.width > 120 && v.height > 90
-      ? ({
-          right: Math.max(12, window.innerWidth - v.left - v.width + 12),
-          top: Math.min(
-            Math.max(v.top + 12, v.top + v.height * 0.6 - 21),
-            window.innerHeight - 60,
-          ),
-          bottom: 'auto',
-        } as CSSProperties)
-      : undefined;
+/**
+ * Floating widget shown on every page: brand button (opens the menu) with
+ * 设置/快捷翻译 sliding out on hover, and a 沉浸翻译 button. Defaults to the
+ * right edge, vertically centered; draggable, with the position persisted.
+ */
+function FloatingWidget({ ui, actions }: { ui: UIState; actions: UIActions }) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(
+    null,
+  );
+  const suppressClick = useRef(false);
 
-  // Hide the floating button during fullscreen video playback.
+  // Hide during fullscreen video playback.
   if (ui.videoDetected && ui.isFullscreen) return null;
 
-  // On video pages: a compact widget. The brand button opens the full menu;
-  // hovering it slides out two shortcuts (设置 / 快捷翻译); the bottom button
-  // is 沉浸翻译 (translate the whole page).
-  if (ui.videoDetected) {
-    return (
-      <div className="lf-fab-widget" style={anchored}>
-        {ui.pageActive && ui.progress.total > 0 && ui.progress.done < ui.progress.total && (
-          <span className="lf-fab-progress">
-            {ui.progress.done}/{ui.progress.total}
-          </span>
-        )}
-        <div className="lf-fab-shortcuts">
-          <button className="lf-fab lf-fab-mini" onClick={actions.openSettings} title="设置" aria-label="设置">
-            <GearIcon />
-          </button>
-          <button
-            className="lf-fab lf-fab-mini"
-            onClick={actions.quickTranslate}
-            title="快捷翻译"
-            aria-label="快捷翻译"
-          >
-            <BoltIcon />
-          </button>
-        </div>
-        <button
-          className={`lf-fab lf-fab-brand ${ui.playerMenu ? 'lf-active' : ''}`}
-          onClick={(e) => actions.togglePlayerMenu(e.currentTarget.getBoundingClientRect())}
-          title="LinguaFlow 菜单"
-          aria-label="LinguaFlow 菜单"
-        >
-          <img src={chrome.runtime.getURL('icons/icon48.png')} alt="" />
-        </button>
-        <button
-          className={`lf-fab lf-fab-mini lf-fab-immersive ${ui.pageActive ? 'lf-active' : ''}`}
-          onClick={actions.immersiveTranslate}
-          title="沉浸翻译（原文在上，译文在下）"
-          aria-label="沉浸翻译"
-        >
-          <ImmersiveIcon />
-        </button>
-      </div>
-    );
-  }
+  const pos = ui.fabPos;
+  const style: CSSProperties | undefined = pos
+    ? { left: pos.left, top: pos.top, right: 'auto', bottom: 'auto', transform: 'none' }
+    : undefined; // CSS default: right edge, vertically centered
+
+  const onPointerDown = (e: ReactPointerEvent) => {
+    const rect = rootRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    drag.current = { sx: e.clientX, sy: e.clientY, ox: rect.left, oy: rect.top, moved: false };
+  };
+  const onPointerMove = (e: ReactPointerEvent) => {
+    const d = drag.current;
+    if (!d) return;
+    const dx = e.clientX - d.sx;
+    const dy = e.clientY - d.sy;
+    if (!d.moved && Math.abs(dx) + Math.abs(dy) < 5) return;
+    d.moved = true;
+    rootRef.current?.setPointerCapture(e.pointerId);
+    const w = rootRef.current?.offsetWidth ?? 46;
+    const h = rootRef.current?.offsetHeight ?? 120;
+    actions.setFabPos({
+      left: Math.max(4, Math.min(d.ox + dx, window.innerWidth - w - 4)),
+      top: Math.max(4, Math.min(d.oy + dy, window.innerHeight - h - 4)),
+    });
+  };
+  const onPointerUp = () => {
+    if (drag.current?.moved) {
+      suppressClick.current = true;
+      const rect = rootRef.current?.getBoundingClientRect();
+      if (rect) actions.saveFabPos({ left: rect.left, top: rect.top });
+    }
+    drag.current = null;
+  };
+
+  // Ignore the click that ends a drag.
+  const guard =
+    (fn: () => void) =>
+    () => {
+      if (suppressClick.current) {
+        suppressClick.current = false;
+        return;
+      }
+      fn();
+    };
 
   return (
-    <div className="lf-fab-stack" style={anchored}>
+    <div
+      className="lf-fab-widget"
+      ref={rootRef}
+      style={style}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+    >
       {ui.pageActive && ui.progress.total > 0 && ui.progress.done < ui.progress.total && (
         <span className="lf-fab-progress">
           {ui.progress.done}/{ui.progress.total}
         </span>
       )}
+      <div className="lf-fab-shortcuts">
+        <button
+          className="lf-fab lf-fab-mini"
+          onClick={guard(actions.openSettings)}
+          title="设置"
+          aria-label="设置"
+        >
+          <GearIcon />
+        </button>
+        <button
+          className="lf-fab lf-fab-mini"
+          onClick={guard(actions.quickTranslate)}
+          title="快捷翻译"
+          aria-label="快捷翻译"
+        >
+          <BoltIcon />
+        </button>
+      </div>
       <button
-        className="lf-fab"
-        onClick={actions.openSidePanel}
-        title="打开学习面板"
-        aria-label="打开学习面板"
-      >
-        ☰
-      </button>
-      <button
-        className={`lf-fab lf-fab-brand ${ui.pageActive ? 'lf-active' : ''}`}
-        onClick={actions.togglePage}
-        title="翻译/还原整页 (Alt+T)"
-        aria-label="翻译或还原整页"
+        className={`lf-fab lf-fab-brand ${ui.playerMenu ? 'lf-active' : ''}`}
+        onClick={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          guard(() => actions.togglePlayerMenu(rect))();
+        }}
+        title="LinguaFlow 菜单"
+        aria-label="LinguaFlow 菜单"
       >
         <img src={chrome.runtime.getURL('icons/icon48.png')} alt="" />
+      </button>
+      <button
+        className={`lf-fab lf-fab-mini lf-fab-immersive ${ui.pageActive ? 'lf-active' : ''}`}
+        onClick={guard(actions.immersiveTranslate)}
+        title="沉浸翻译（原文在上，译文在下）"
+        aria-label="沉浸翻译"
+      >
+        <ImmersiveIcon />
       </button>
     </div>
   );

@@ -140,16 +140,6 @@
 
 /* ---------- floating action buttons ---------- */
 
-.lf-fab-stack {
-  position: fixed;
-  right: 18px;
-  bottom: 96px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  align-items: center;
-}
-
 .lf-fab {
   width: 42px;
   height: 42px;
@@ -181,12 +171,14 @@
    slide out on hover. */
 .lf-fab-widget {
   position: fixed;
-  right: 18px;
-  bottom: 96px;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
   flex-direction: column;
   gap: 10px;
   align-items: center;
+  touch-action: none;
 }
 
 .lf-fab-shortcuts {
