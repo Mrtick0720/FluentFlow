@@ -21,6 +21,15 @@
   border-radius: 4px;
 }
 
+/* Heading translations: plain text inheriting the heading size, slightly
+   lighter — no tinted block. */
+[data-lf-translated] > .lf-trans.lf-heading {
+  background: none;
+  border: none;
+  padding: 0;
+  opacity: 0.9;
+}
+
 html[data-lf-mode='translation-only'] [data-lf-translated] > .lf-original {
   display: none !important;
 }

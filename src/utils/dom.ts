@@ -34,6 +34,8 @@ const SKIP_CLOSEST = [
   '[contenteditable]',
   '[translate="no"]',
   '.notranslate',
+  '[aria-hidden="true"]', // collapsed dropdowns / off-screen menus
+  '[hidden]',
   `[${ATTR_TRANSLATED}]`,
 ].join(',');
 
@@ -56,7 +58,17 @@ export function collectTranslatableBlocks(root: ParentNode): HTMLElement[] {
 }
 
 function isRenderable(el: HTMLElement): boolean {
-  if (el.getClientRects().length === 0) return false;
+  const rects = el.getClientRects();
+  if (rects.length === 0) return false;
+  const rect = rects[0]!;
+  // Off-screen hiding (menus parked far off the page).
+  if (rect.right < -800 || rect.bottom < -800) return false;
+  if (rect.left > window.innerWidth + 2000 || rect.top > document.documentElement.scrollHeight + 2000) {
+    return false;
+  }
+  const style = getComputedStyle(el);
+  if (style.visibility === 'hidden' || style.visibility === 'collapse') return false;
+  if (parseFloat(style.opacity) === 0) return false;
   return true;
 }
 

@@ -154,8 +154,12 @@ export class PageTranslator {
     original.className = 'lf-original';
     while (el.firstChild) original.appendChild(el.firstChild);
 
+    // Headings read cleaner as plain text below the title, without the
+    // tinted/underline block the body paragraphs use.
+    const isHeading = /^H[1-6]$/.test(el.tagName);
+    const style = isHeading ? 'plain' : this.opts.style;
     const trans = document.createElement('span');
-    trans.className = `lf-trans lf-style-${this.opts.style}`;
+    trans.className = `lf-trans lf-style-${style}${isHeading ? ' lf-heading' : ''}`;
     trans.setAttribute('translate', 'no');
     trans.style.setProperty('--lf-font-scale', String(this.opts.fontScale));
     trans.textContent = translation;
