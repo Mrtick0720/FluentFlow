@@ -332,6 +332,72 @@ describe('SubtitleController live captions (whole-sentence mode)', () => {
   });
 });
 
+function trackHarness(
+  segments: Array<{ index: number; start: number; end: number; text: string; translation?: string }>,
+  translate: (texts: string[]) => Promise<string[]>,
+) {
+  const video = Object.assign(new EventTarget(), {
+    currentTime: 0,
+    playbackRate: 1,
+    paused: false,
+    play() {
+      this.paused = false;
+      return Promise.resolve();
+    },
+    pause() {
+      this.paused = true;
+    },
+    getBoundingClientRect() {
+      return null;
+    },
+  }) as unknown as HTMLVideoElement;
+  const adapter: VideoAdapter = {
+    id: 'track-test',
+    match: () => true,
+    getVideo: () => video,
+    getSubtitleTracks: async () => [
+      { id: 't', label: 'T', language: 'en', kind: 'captions', segments },
+    ],
+    getCurrentCaption: () => null,
+    seek: (s) => {
+      (video as unknown as { currentTime: number }).currentTime = s;
+    },
+    onCaptionChanged: () => () => {},
+  };
+  const states: SubtitleViewState[] = [];
+  const controller = new SubtitleController(new VideoAdapterRegistry().register(adapter), {
+    translate,
+    onState: (state) => states.push({ ...state }),
+  });
+  const tick = (t: number) => {
+    (video as unknown as { currentTime: number }).currentTime = t;
+    video.dispatchEvent(new Event('timeupdate'));
+  };
+  return { controller, video, states, tick };
+}
+
+describe('SubtitleController track mode', () => {
+  it('holds the last sentence during gaps between segments (no blank "…")', async () => {
+    const segs = [
+      { index: 0, start: 0, end: 2, text: 'First sentence' },
+      { index: 1, start: 3, end: 5, text: 'Second sentence' },
+    ];
+    const h = trackHarness(segs, async ([t]) => [`译：${t}`]);
+    await h.controller.attach('https://example.com/video');
+
+    h.tick(1); // inside the first segment
+    expect(latest(h.states).original).toBe('First sentence');
+
+    h.tick(2.5); // gap between segments — must keep showing the first one
+    expect(latest(h.states).original).toBe('First sentence');
+
+    h.tick(3.2); // inside the second segment
+    expect(latest(h.states).original).toBe('Second sentence');
+
+    h.controller.detach();
+  });
+});
+
 describe('mergeCaptions / isRelatedCaption', () => {
   it('recognizes growth and prefix truncation', () => {
     expect(mergeCaptions('Hello', 'Hello world')).toBe('Hello world');

@@ -412,12 +412,13 @@ export class SubtitleController {
       }
     }
 
+    // Gap between segments (speech continues, but currentTime is between two
+    // subtitle sentences): keep the last sentence on screen instead of
+    // blanking to "…". Only switch when a real next segment starts.
+    if (idx === -1) return;
+
     this.index = idx;
-    const segment = this.segments[idx];
-    if (!segment) {
-      this.setState({ original: '', translation: '', index: -1 });
-      return;
-    }
+    const segment = this.segments[idx]!;
     this.setState({
       original: segment.text,
       translation: segment.translation ?? '',
