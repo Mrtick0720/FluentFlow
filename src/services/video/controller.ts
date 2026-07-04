@@ -13,11 +13,18 @@ export interface SubtitleViewState {
   playbackRate: number;
   tracks: Array<{ id: string; label: string; language: string }>;
   activeTrackId?: string;
+  /** Learning mode: pause the video at the end of every sentence. */
+  autoPause: boolean;
 }
 
 export interface SubtitleControllerDeps {
   translate(texts: string[]): Promise<string[]>;
   onState(state: SubtitleViewState): void;
+  /**
+   * Full transcript for the lyrics-style list. Track mode: all segments up
+   * front. Live mode: grows as captions are seen (no pre-fetching).
+   */
+  onTranscript?(segments: SubtitleSegment[]): void;
 }
 
 const LIVE_SKIP_SECONDS = 5;
@@ -44,10 +51,13 @@ export class SubtitleController {
     abLoop: null,
     playbackRate: 1,
     tracks: [],
+    autoPause: false,
   };
   private liveTranslateToken = 0;
   private liveDebounce: ReturnType<typeof setTimeout> | undefined;
   private lastLiveText = '';
+  private liveHistory: SubtitleSegment[] = [];
+  private autoPause = false;
 
   constructor(
     private registry: VideoAdapterRegistry,
@@ -76,8 +86,11 @@ export class SubtitleController {
       // Live mode: follow whatever caption the page displays.
       const unsubscribe = this.adapter.onCaptionChanged((c) => this.onLiveCaption(c));
       this.cleanup.push(unsubscribe);
+      // Our panel mirrors the caption — hide the player's own display.
+      if (this.adapter.hideNativeCaptions) this.cleanup.push(this.adapter.hideNativeCaptions());
       const initial = this.adapter.getCurrentCaption();
       this.setState({ status: 'ready', mode: 'live', tracks: [] });
+      this.deps.onTranscript?.([]);
       if (initial) this.onLiveCaption(initial);
     }
 
@@ -92,6 +105,7 @@ export class SubtitleController {
     this.cleanup = [];
     clearTimeout(this.liveDebounce);
     this.lastLiveText = '';
+    this.liveHistory = [];
     this.liveTranslateToken++;
     this.adapter = null;
     this.video = null;
@@ -117,7 +131,35 @@ export class SubtitleController {
     this.segments = [...track.segments].sort((a, b) => a.start - b.start);
     this.index = -1;
     this.setState({ activeTrackId: trackId, total: this.segments.length });
+    this.emitTranscript();
     this.syncTrackMode(true);
+  }
+
+  setAutoPause(on: boolean): void {
+    this.autoPause = on;
+    this.setState({ autoPause: on });
+  }
+
+  /** Jump to a transcript line (lyrics list click). */
+  seekToSegment(index: number): void {
+    const source = this.state.mode === 'track' ? this.segments : this.liveHistory;
+    const segment = source[index];
+    if (!segment) return;
+    this.adapter?.seek(segment.start + 0.01);
+    this.resumeIfAutoPaused();
+  }
+
+  getVideoRect(): DOMRect | null {
+    return this.video?.getBoundingClientRect() ?? null;
+  }
+
+  private emitTranscript(): void {
+    const source = this.state.mode === 'live' ? this.liveHistory : this.segments;
+    this.deps.onTranscript?.(source.map((s) => ({ ...s })));
+  }
+
+  private resumeIfAutoPaused(): void {
+    if (this.autoPause && this.video?.paused) void this.video.play().catch(() => {});
   }
 
   hasSubtitles(): boolean {
@@ -147,6 +189,7 @@ export class SubtitleController {
     const segment = this.current();
     if (segment && this.state.mode === 'track') this.adapter?.seek(segment.start + 0.01);
     else if (this.video) this.video.currentTime = Math.max(0, this.video.currentTime - LIVE_SKIP_SECONDS);
+    this.resumeIfAutoPaused();
   }
 
   prev(): void {
@@ -155,6 +198,7 @@ export class SubtitleController {
     } else if (this.video) {
       this.video.currentTime = Math.max(0, this.video.currentTime - LIVE_SKIP_SECONDS);
     }
+    this.resumeIfAutoPaused();
   }
 
   next(): void {
@@ -163,6 +207,7 @@ export class SubtitleController {
     } else if (this.video) {
       this.video.currentTime += LIVE_SKIP_SECONDS;
     }
+    this.resumeIfAutoPaused();
   }
 
   /** First call sets A at the current segment/time, second sets B, third clears. */
@@ -206,6 +251,18 @@ export class SubtitleController {
 
     const idx = this.findSegmentIndex(t);
     if (idx === this.index && !force) return;
+
+    // Learning mode: freeze on the sentence that just finished instead of
+    // rolling into the next one.
+    if (this.autoPause && !force && this.index >= 0 && idx !== this.index && !this.video.paused) {
+      const finished = this.segments[this.index]!;
+      if (t >= finished.end) {
+        this.video.pause();
+        this.adapter?.seek(Math.max(finished.start, finished.end - 0.05));
+        return;
+      }
+    }
+
     this.index = idx;
     const segment = this.segments[idx];
     if (!segment) {
@@ -246,6 +303,7 @@ export class SubtitleController {
     if (this.index === idx) {
       this.setState({ translation: this.segments[idx]?.translation ?? '' });
     }
+    this.emitTranscript();
   }
 
   /**
@@ -257,15 +315,23 @@ export class SubtitleController {
   private onLiveCaption(caption: CaptionState | null): void {
     const text = caption?.text ?? '';
     if (text === this.lastLiveText) return;
+    const hadText = this.lastLiveText !== '';
     this.lastLiveText = text;
-    // Empty gap between cues: keep the last line visible instead of blanking.
-    if (!text) return;
+    // Empty gap between cues: keep the last line visible instead of blanking,
+    // and use the gap as the sentence boundary in learning mode.
+    if (!text) {
+      if (this.autoPause && hadText) this.video?.pause();
+      return;
+    }
     this.setState({ original: text });
     clearTimeout(this.liveDebounce);
-    this.liveDebounce = setTimeout(() => void this.translateLive(text), 600);
+    this.liveDebounce = setTimeout(
+      () => void this.translateLive(text, caption?.start ?? this.video?.currentTime ?? 0),
+      600,
+    );
   }
 
-  private async translateLive(text: string): Promise<void> {
+  private async translateLive(text: string, start: number): Promise<void> {
     const token = ++this.liveTranslateToken;
     try {
       const [translation] = await this.deps.translate([text]);
@@ -273,8 +339,31 @@ export class SubtitleController {
       if (token === this.liveTranslateToken && this.lastLiveText === text) {
         this.setState({ translation: translation ?? '' });
       }
+      this.appendLiveHistory(text, translation ?? '', start);
     } catch {
       // keep the previous translation; the next stable caption retries
     }
+  }
+
+  /**
+   * Grow the live transcript. Captions render progressively, so if the new
+   * stable text extends the previous entry, replace it instead of appending.
+   */
+  private appendLiveHistory(text: string, translation: string, start: number): void {
+    const last = this.liveHistory[this.liveHistory.length - 1];
+    if (last && (text.startsWith(last.text) || last.text.startsWith(text))) {
+      last.text = text.length > last.text.length ? text : last.text;
+      last.translation = translation;
+    } else if (!last || last.text !== text) {
+      this.liveHistory.push({
+        index: this.liveHistory.length,
+        start,
+        end: start,
+        text,
+        translation,
+      });
+      if (this.liveHistory.length > 500) this.liveHistory.shift();
+    }
+    this.emitTranscript();
   }
 }

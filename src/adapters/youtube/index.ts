@@ -42,6 +42,15 @@ export class YouTubeAdapter extends GenericHtml5Adapter {
     return super.getCurrentCaption();
   }
 
+  /** Fade out the player's caption window (opacity keeps the DOM updating). */
+  hideNativeCaptions(): () => void {
+    const style = document.createElement('style');
+    style.id = 'lf-hide-native-cc';
+    style.textContent = '.ytp-caption-window-container { opacity: 0 !important; }';
+    document.head.appendChild(style);
+    return () => style.remove();
+  }
+
   override onCaptionChanged(cb: (caption: CaptionState | null) => void): () => void {
     const container =
       document.querySelector('.ytp-caption-window-container') ??

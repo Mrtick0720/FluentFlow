@@ -327,6 +327,80 @@
   font-size: 12.5px;
 }
 
+/* ---------- transcript (lyrics) panel ---------- */
+
+.lf-transcript {
+  position: fixed;
+  right: 16px;
+  top: 9vh;
+  width: 300px;
+  height: 78vh;
+  background: var(--lf-bg);
+  border: 1px solid var(--lf-border);
+  border-radius: 14px;
+  box-shadow: var(--lf-shadow);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.lf-transcript-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--lf-border);
+}
+
+.lf-transcript-list {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+}
+
+.lf-transcript-item {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  border: none;
+  border-left: 3px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--lf-fg);
+  cursor: pointer;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.lf-transcript-item:hover {
+  background: var(--lf-accent-soft);
+}
+
+.lf-transcript-item.lf-current {
+  background: var(--lf-accent-soft);
+  border-left-color: var(--lf-accent);
+  font-weight: 600;
+}
+
+.lf-transcript-time {
+  color: var(--lf-fg-soft);
+  font-size: 11px;
+  min-width: 34px;
+  padding-top: 1px;
+  flex-shrink: 0;
+}
+
+.lf-transcript-trans {
+  display: block;
+  color: var(--lf-fg-soft);
+  font-size: 12px;
+  font-weight: 400;
+  margin-top: 2px;
+}
+
 /* ---------- toast ---------- */
 
 .lf-toast {

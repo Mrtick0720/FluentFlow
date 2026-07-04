@@ -17,7 +17,26 @@ function matchesQuery(haystack: Array<string | undefined>, query: string): boole
   return haystack.some((h) => h?.toLowerCase().includes(q));
 }
 
+/** Simple ladder: again drops back to learning, good climbs one rung. */
+export function nextReviewStatus(
+  current: Vocabulary['reviewStatus'],
+  outcome: 'again' | 'good',
+): Vocabulary['reviewStatus'] {
+  if (outcome === 'again') return 'learning';
+  const ladder: Record<Vocabulary['reviewStatus'], Vocabulary['reviewStatus']> = {
+    new: 'learning',
+    learning: 'reviewing',
+    reviewing: 'mastered',
+    mastered: 'mastered',
+  };
+  return ladder[current];
+}
+
 export class VocabularyRepository {
+  async get(id: string): Promise<Vocabulary | undefined> {
+    return idb.get<Vocabulary>(STORES.vocabulary, id);
+  }
+
   async add(input: Omit<Vocabulary, 'id' | 'createdAt'>): Promise<Vocabulary> {
     const item: Vocabulary = { ...input, id: newId(), createdAt: Date.now() };
     await idb.put(STORES.vocabulary, item);

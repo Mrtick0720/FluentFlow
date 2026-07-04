@@ -1,4 +1,4 @@
-import { useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { uiStore, type UIState } from './store';
 
@@ -25,6 +25,9 @@ export interface UIActions {
   subtitleSelectTrack(id: string): void;
   subtitleBookmark(): void;
   subtitleExplain(): void;
+  subtitleToggleAutoPause(): void;
+  subtitleToggleTranscript(): void;
+  subtitleSeekTo(index: number): void;
   openSidePanel(): void;
 }
 
@@ -47,6 +50,7 @@ export function App({ actions }: { actions: UIActions }) {
       {ui.wordCard && <WordCard ui={ui} actions={actions} />}
       {ui.sentenceCard && <SentenceCard ui={ui} actions={actions} />}
       {ui.subtitleVisible && ui.subtitleState && <SubtitlePanel ui={ui} actions={actions} />}
+      {ui.subtitleVisible && ui.transcriptVisible && <TranscriptPanel ui={ui} actions={actions} />}
       <FabStack ui={ui} actions={actions} />
       {ui.toast && (
         <div className="lf-toast" role="status">
@@ -277,9 +281,16 @@ function SubtitlePanel({ ui, actions }: { ui: UIState; actions: UIActions }) {
     dragRef.current = null;
   };
 
+  // Priority: user drag position > video-bottom anchor > viewport bottom.
   const style: CSSProperties = pos
     ? { left: pos.left, top: pos.top, bottom: 'auto', transform: 'none' }
-    : {};
+    : ui.subtitleAnchor
+      ? {
+          left: Math.min(Math.max(ui.subtitleAnchor.x, 190), window.innerWidth - 190),
+          top: Math.max(8, Math.min(ui.subtitleAnchor.y, window.innerHeight - 200)),
+          bottom: 'auto',
+        }
+      : {};
 
   const abLabel = !s.abLoop ? 'A-B' : s.abLoop.b === -1 ? 'B?' : 'A-B ✓';
 
@@ -295,6 +306,13 @@ function SubtitlePanel({ ui, actions }: { ui: UIState; actions: UIActions }) {
           字幕学习{s.mode === 'live' ? '（跟随播放器字幕）' : ` · ${s.index + 1}/${s.total}`}
         </span>
         <span className="lf-row">
+          <button
+            className={`lf-btn ${ui.transcriptVisible ? 'lf-btn-primary' : ''}`}
+            onClick={actions.subtitleToggleTranscript}
+            title="字幕列表（歌词模式）"
+          >
+            ≡ 列表
+          </button>
           {s.tracks.length > 0 && (
             <select
               className="lf-select"
@@ -359,6 +377,13 @@ function SubtitlePanel({ ui, actions }: { ui: UIState; actions: UIActions }) {
         >
           {abLabel}
         </button>
+        <button
+          className={`lf-btn ${s.autoPause ? 'lf-btn-primary' : ''}`}
+          onClick={actions.subtitleToggleAutoPause}
+          title="学习模式：每句结束自动暂停，按 ↻ 重听、⏭ 继续"
+        >
+          逐句停
+        </button>
         <select
           className="lf-select"
           value={s.playbackRate}
@@ -382,6 +407,65 @@ function SubtitlePanel({ ui, actions }: { ui: UIState; actions: UIActions }) {
         >
           ✨ 讲解
         </button>
+      </div>
+    </div>
+  );
+}
+
+function formatClock(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+/** Lyrics-style transcript docked on the right; current line follows playback. */
+function TranscriptPanel({ ui, actions }: { ui: UIState; actions: UIActions }) {
+  const s = ui.subtitleState!;
+  const activeIndex = s.mode === 'track' ? s.index : ui.transcript.length - 1;
+  const activeRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [activeIndex, ui.transcript.length]);
+
+  return (
+    <div className="lf-transcript" role="region" aria-label="字幕列表">
+      <div className="lf-transcript-header">
+        <span className="lf-muted">
+          字幕列表{s.mode === 'live' ? '（随播放累积）' : ` · ${ui.transcript.length} 句`}
+        </span>
+        <button
+          className="lf-close"
+          style={{ position: 'static' }}
+          onClick={actions.subtitleToggleTranscript}
+          aria-label="关闭字幕列表"
+        >
+          ✕
+        </button>
+      </div>
+      <div className="lf-transcript-list">
+        {ui.transcript.length === 0 && (
+          <div className="lf-muted" style={{ padding: 12 }}>
+            {s.mode === 'live'
+              ? '此站点无法预取完整字幕，播放过的句子会陆续出现在这里。'
+              : '暂无字幕。'}
+          </div>
+        )}
+        {ui.transcript.map((seg, i) => (
+          <button
+            key={i}
+            ref={i === activeIndex ? activeRef : undefined}
+            className={`lf-transcript-item ${i === activeIndex ? 'lf-current' : ''}`}
+            onClick={() => actions.subtitleSeekTo(i)}
+            aria-current={i === activeIndex}
+          >
+            <span className="lf-transcript-time">{formatClock(seg.start)}</span>
+            <span className="lf-transcript-text">
+              {seg.text}
+              {seg.translation && <span className="lf-transcript-trans">{seg.translation}</span>}
+            </span>
+          </button>
+        ))}
       </div>
     </div>
   );

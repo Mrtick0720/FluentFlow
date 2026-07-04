@@ -3,6 +3,8 @@ import { cacheClear, cacheSweep } from '@/services/cache/ttlCache';
 import { DictionaryService } from '@/services/dictionary/service';
 import {
   ConversationRepository,
+  nextReviewStatus,
+  ReviewHistoryRepository,
   SentenceRepository,
   StatsRepository,
   VocabularyRepository,
@@ -27,6 +29,7 @@ const dictionaryService = new DictionaryService(translationService, aiService);
 const vocabulary = new VocabularyRepository();
 const sentences = new SentenceRepository();
 const conversations = new ConversationRepository();
+const reviews = new ReviewHistoryRepository();
 const stats = new StatsRepository();
 
 const router = new MessageRouter()
@@ -40,6 +43,14 @@ const router = new MessageRouter()
     return null;
   })
   .on('vocabulary.import', async ({ items }) => ({ imported: await vocabulary.importMany(items) }))
+  .on('vocabulary.review', async ({ id, outcome }) => {
+    const item = await vocabulary.get(id);
+    if (!item) throw new Error('word not found');
+    const updated = { ...item, reviewStatus: nextReviewStatus(item.reviewStatus, outcome) };
+    await vocabulary.update(updated);
+    await reviews.record({ vocabularyId: id, reviewedAt: Date.now(), outcome });
+    return updated;
+  })
   .on('sentences.add', (req) => sentences.add(req))
   .on('sentences.list', (req) => sentences.list(req))
   .on('sentences.update', (req) => sentences.update(req))

@@ -26,6 +26,12 @@ export interface VideoAdapter {
   seek(seconds: number): void;
   /** Subscribe to caption changes; returns an unsubscribe function. */
   onCaptionChanged(cb: (caption: CaptionState | null) => void): () => void;
+  /**
+   * Visually hide the player's own caption display while our panel mirrors
+   * it (avoids double subtitles). Must keep the caption DOM updating.
+   * Returns a restore function.
+   */
+  hideNativeCaptions?(): () => void;
 }
 
 /** First matching adapter wins; register specific adapters before generic. */

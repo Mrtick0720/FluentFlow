@@ -97,6 +97,7 @@ async function main() {
   const subtitleController = new SubtitleController(adapterRegistry, {
     translate,
     onState: (state) => uiStore.set({ subtitleState: state }),
+    onTranscript: (segments) => uiStore.set({ transcript: segments }),
   });
 
   function detectVideo(attempt = 0) {
@@ -111,11 +112,16 @@ async function main() {
   async function toggleSubtitlePanel() {
     if (uiStore.get().subtitleVisible) {
       subtitleController.detach();
-      uiStore.set({ subtitleVisible: false });
+      uiStore.set({ subtitleVisible: false, transcript: [], transcriptVisible: false });
       return;
     }
     uiStore.set({ subtitleVisible: true });
     const state = await subtitleController.attach(location.href);
+    // Anchor the panel to the lower part of the video by default.
+    const rect = subtitleController.getVideoRect();
+    uiStore.set({
+      subtitleAnchor: rect ? { x: rect.left + rect.width / 2, y: rect.bottom - 230 } : null,
+    });
     if (state.status === 'ready' && !videoWatchedRecorded) {
       videoWatchedRecorded = true;
       void sendRequest('stats.record', {
@@ -379,6 +385,17 @@ async function main() {
       })
         .then(() => showToast('已收藏字幕句'))
         .catch(() => showToast('保存失败'));
+    },
+    subtitleToggleAutoPause() {
+      const on = !(uiStore.get().subtitleState?.autoPause ?? false);
+      subtitleController.setAutoPause(on);
+      showToast(on ? '已开启逐句暂停：每句结束自动停，↻ 重听，⏭ 继续' : '已关闭逐句暂停');
+    },
+    subtitleToggleTranscript() {
+      uiStore.set((prev) => ({ transcriptVisible: !prev.transcriptVisible }));
+    },
+    subtitleSeekTo(index) {
+      subtitleController.seekToSegment(index);
     },
     subtitleExplain() {
       const current = subtitleController.currentWithTranslation();

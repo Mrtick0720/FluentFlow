@@ -1,6 +1,6 @@
 import type { SubtitleViewState } from '@/services/video/controller';
 import type { SubtitleStyle } from '@/shared/settings';
-import type { DictionaryEntry } from '@/types/models';
+import type { DictionaryEntry, SubtitleSegment } from '@/types/models';
 
 export interface WordCardState {
   x: number;
@@ -36,6 +36,10 @@ export interface UIState {
   subtitleVisible: boolean;
   subtitleState: SubtitleViewState | null;
   subtitleStyle: SubtitleStyle | null;
+  /** Default panel position anchored to the video (center-x, top). */
+  subtitleAnchor: { x: number; y: number } | null;
+  transcript: SubtitleSegment[];
+  transcriptVisible: boolean;
   pageActive: boolean;
   progress: { done: number; total: number };
   aiAvailable: boolean;
@@ -50,6 +54,9 @@ const initial: UIState = {
   subtitleVisible: false,
   subtitleState: null,
   subtitleStyle: null,
+  subtitleAnchor: null,
+  transcript: [],
+  transcriptVisible: false,
   pageActive: false,
   progress: { done: 0, total: 0 },
   aiAvailable: false,

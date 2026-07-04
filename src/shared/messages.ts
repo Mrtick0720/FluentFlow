@@ -41,6 +41,8 @@ export interface RequestMap {
   'vocabulary.update': { req: Vocabulary; res: Vocabulary };
   'vocabulary.remove': { req: { id: string }; res: null };
   'vocabulary.import': { req: { items: Vocabulary[] }; res: { imported: number } };
+  /** Flashcard review: updates review status and logs history. */
+  'vocabulary.review': { req: { id: string; outcome: 'again' | 'good' }; res: Vocabulary };
   'sentences.add': { req: Omit<Sentence, 'id' | 'createdAt'>; res: Sentence };
   'sentences.list': { req: { query?: string; tag?: string }; res: Sentence[] };
   'sentences.update': { req: Sentence; res: Sentence };
