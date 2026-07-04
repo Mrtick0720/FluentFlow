@@ -106,6 +106,7 @@ async function main() {
   function detectVideo(attempt = 0) {
     if (document.querySelector('video')) {
       uiStore.set({ videoDetected: true });
+      startVideoLayoutSync(); // pin the floating buttons to the video
       // Auto-open the bilingual subtitle panel on video sites, if enabled.
       if (settings.autoSubtitleVideoSites && !autoSubtitleDone && !uiStore.get().subtitleVisible) {
         autoSubtitleDone = true;
@@ -141,47 +142,65 @@ async function main() {
     });
   }
 
-  let stopVideoLayoutSync: (() => void) | null = null;
+  // The largest visible <video> on the page — anchors the FAB + subtitle panel.
+  function findMainVideo(): HTMLVideoElement | null {
+    const videos = [...document.querySelectorAll('video')].filter((v) => {
+      const r = v.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    });
+    if (videos.length === 0) return null;
+    return videos.reduce((best, v) => {
+      const area = (el: HTMLVideoElement) => {
+        const r = el.getBoundingClientRect();
+        return r.width * r.height;
+      };
+      return area(v) > area(best) ? v : best;
+    });
+  }
 
-  function startVideoLayoutSync(): () => void {
+  // Track the main video's rect continuously (resize / scroll / fullscreen /
+  // layout changes), so the floating buttons stay pinned to the video.
+  let videoLayoutStarted = false;
+  function startVideoLayoutSync(): void {
+    if (videoLayoutStarted) return;
+    videoLayoutStarted = true;
     let frame = 0;
+    let observed: HTMLVideoElement | null = null;
+    const resizeObserver =
+      typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(() => measure())
+        : null;
     const measure = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
-        const rect = subtitleController.getVideoRect();
+        const video = findMainVideo();
+        if (video && video !== observed) {
+          if (observed) resizeObserver?.unobserve(observed);
+          resizeObserver?.observe(video);
+          observed = video;
+        }
+        const rect = video?.getBoundingClientRect();
         uiStore.set({
-          subtitleVideoRect: rect
-            ? { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
-            : null,
+          videoRect:
+            rect && rect.width > 0
+              ? { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
+              : null,
         });
       });
     };
-    const video = subtitleController.getVideoElement();
-    const resizeObserver = video && typeof ResizeObserver !== 'undefined'
-      ? new ResizeObserver(measure)
-      : null;
-    if (video) resizeObserver?.observe(video);
     window.addEventListener('resize', measure);
     window.addEventListener('scroll', measure, true);
     document.addEventListener('fullscreenchange', measure);
+    // YouTube resizes the player (theater/mini) without firing resize; poll.
+    setInterval(measure, 1000);
     measure();
-    return () => {
-      cancelAnimationFrame(frame);
-      resizeObserver?.disconnect();
-      window.removeEventListener('resize', measure);
-      window.removeEventListener('scroll', measure, true);
-      document.removeEventListener('fullscreenchange', measure);
-    };
   }
 
   async function toggleSubtitlePanel() {
     if (uiStore.get().subtitleVisible) {
-      stopVideoLayoutSync?.();
-      stopVideoLayoutSync = null;
       subtitleController.detach();
       uiStore.set({
         subtitleVisible: false,
-        subtitleVideoRect: null,
         transcript: [],
         transcriptVisible: false,
       });
@@ -189,8 +208,6 @@ async function main() {
     }
     uiStore.set({ subtitleVisible: true });
     const state = await subtitleController.attach(location.href);
-    stopVideoLayoutSync?.();
-    stopVideoLayoutSync = startVideoLayoutSync();
     if (state.status === 'ready' && !videoWatchedRecorded) {
       videoWatchedRecorded = true;
       void sendRequest('stats.record', {

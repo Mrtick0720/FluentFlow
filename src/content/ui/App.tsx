@@ -263,8 +263,24 @@ function PlayerMenu({ ui, actions }: { ui: UIState; actions: UIActions }) {
 }
 
 function FabStack({ ui, actions }: { ui: UIState; actions: UIActions }) {
+  // When a video is present, pin the stack to the video's right edge, vertically
+  // centered — so it stays beside the video instead of the viewport corner as
+  // the window narrows. Otherwise fall back to the CSS default (viewport
+  // bottom-right) for article pages.
+  const v = ui.videoRect;
+  const anchored =
+    v && v.width > 120 && v.height > 90
+      ? ({
+          right: Math.max(12, window.innerWidth - v.left - v.width + 12),
+          top: Math.min(
+            Math.max(v.top + 12, v.top + v.height / 2 - 80),
+            window.innerHeight - 160,
+          ),
+          bottom: 'auto',
+        } as CSSProperties)
+      : undefined;
   return (
-    <div className="lf-fab-stack">
+    <div className="lf-fab-stack" style={anchored}>
       {ui.pageActive && ui.progress.total > 0 && ui.progress.done < ui.progress.total && (
         <span className="lf-fab-progress">
           {ui.progress.done}/{ui.progress.total}
@@ -326,7 +342,7 @@ function SubtitlePanel({ ui, actions }: { ui: UIState; actions: UIActions }) {
     dragRef.current = null;
   };
 
-  const geometry = getSubtitleOverlayGeometry(ui.subtitleVideoRect, {
+  const geometry = getSubtitleOverlayGeometry(ui.videoRect, {
     width: window.innerWidth,
     height: window.innerHeight,
   });
