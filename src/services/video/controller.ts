@@ -84,11 +84,19 @@ export class SubtitleController {
     autoPause: false,
   };
   private lastLiveText = '';
+  /** Sentence being spoken right now: buffered silently, translated ahead. */
+  private liveSentence: {
+    text: string;
+    start: number;
+    translation: string;
+    translatedText: string;
+  } | null = null;
   private livePending: { text: string; start: number } | null = null;
   private liveInflight = false;
   private liveThrottle: ReturnType<typeof setTimeout> | undefined;
   private liveSeq = 0;
   private liveAppliedSeq = 0;
+  private liveIdleTimer: ReturnType<typeof setTimeout> | undefined;
   private liveHistory: SubtitleSegment[] = [];
   private autoPause = false;
 
@@ -138,7 +146,10 @@ export class SubtitleController {
     this.cleanup = [];
     clearTimeout(this.liveThrottle);
     this.liveThrottle = undefined;
+    clearTimeout(this.liveIdleTimer);
+    this.liveIdleTimer = undefined;
     this.livePending = null;
+    this.liveSentence = null;
     this.lastLiveText = '';
     this.liveHistory = [];
     // Invalidate any in-flight live translation.
@@ -364,28 +375,70 @@ export class SubtitleController {
    * are translated too — the Chinese refines as the English grows, lagging by
    * roughly one request round-trip instead of until the speaker pauses.
    */
+  /**
+   * Whole-sentence mode: the sentence being spoken is buffered (and
+   * translated ahead) silently — nothing renders word by word. At the
+   * sentence boundary (caption gap, or a switch to unrelated text) the full
+   * English + Chinese pair appears at once, replacing the previous pair.
+   */
   private onLiveCaption(caption: CaptionState | null): void {
     const text = caption?.text ?? '';
     if (text === this.lastLiveText) return;
     const prev = this.lastLiveText;
     this.lastLiveText = text;
+    clearTimeout(this.liveIdleTimer);
 
-    // Gap between cues: keep the last line + translation visible (no flicker);
-    // the gap doubles as the sentence boundary in learning mode.
+    // Gap between cues = sentence boundary.
     if (!text) {
-      this.livePending = null;
-      this.setState({ translating: false });
+      this.finalizeLiveSentence();
       if (this.autoPause && prev) this.video?.pause();
+      // Long silence: don't leave the last pair on screen forever.
+      this.liveIdleTimer = setTimeout(() => {
+        if (this.lastLiveText === '') {
+          this.setState({ original: '', translation: '', translating: false });
+        }
+      }, 7000);
       return;
     }
 
-    this.setState(
-      isRelatedCaption(prev, text)
-        ? { original: text } // same sentence (grown or rolled): keep the partial translation
-        : { original: text, translation: '', translating: true },
-    );
-    this.livePending = { text, start: caption?.start ?? this.video?.currentTime ?? 0 };
+    const start = caption?.start ?? this.video?.currentTime ?? 0;
+    if (this.liveSentence) {
+      const merged = mergeCaptions(this.liveSentence.text, text);
+      if (merged !== null) {
+        this.liveSentence.text = merged;
+      } else {
+        // New sentence began without a gap.
+        this.finalizeLiveSentence();
+        if (this.autoPause) this.video?.pause();
+        this.liveSentence = { text, start, translation: '', translatedText: '' };
+      }
+    } else {
+      this.liveSentence = { text, start, translation: '', translatedText: '' };
+    }
+    // Translate in the background while the sentence builds, so the pair is
+    // (nearly) ready the moment the sentence completes.
+    this.livePending = { text: this.liveSentence.text, start: this.liveSentence.start };
     this.schedulePump(this.liveInflight ? 0 : 120);
+  }
+
+  /** Sentence completed: show English + best-available Chinese together. */
+  private finalizeLiveSentence(): void {
+    const sentence = this.liveSentence;
+    this.liveSentence = null;
+    if (!sentence) return;
+    const exact = sentence.translatedText === sentence.text;
+    this.setState({
+      original: sentence.text,
+      translation: sentence.translation,
+      translating: sentence.translation === '',
+    });
+    this.appendLiveHistory(sentence.text, sentence.translation, sentence.start);
+    // The tail of the sentence may not be translated yet — fetch the exact
+    // translation and refresh the Chinese line when it lands.
+    if (!exact) {
+      this.livePending = { text: sentence.text, start: sentence.start };
+      this.schedulePump(0);
+    }
   }
 
   /** Coalesce a couple of word-ticks, then run the pipeline if it is idle. */
@@ -412,21 +465,26 @@ export class SubtitleController {
           watchdog = setTimeout(() => reject(new Error('live translate timeout')), 8000);
         }),
       ]);
-      // Apply unless a newer result already landed or we detached. Showing a
-      // ~300ms-stale translation beats an endless "翻译中…" — if the caption
-      // already moved to an unrelated sentence AND something is on screen,
-      // skip; otherwise apply and let the next request correct it.
-      const related = isRelatedCaption(this.lastLiveText, text);
-      const nothingShown = this.state.translating || !this.state.translation;
-      if (seq > this.liveAppliedSeq && this.lastLiveText !== '' && (related || nothingShown)) {
+      if (seq > this.liveAppliedSeq && this.adapter) {
         this.liveAppliedSeq = seq;
-        this.setState({ translation, translating: false });
+        if (this.liveSentence && mergeCaptions(text, this.liveSentence.text) !== null) {
+          // Sentence still building: stash the translation for the moment
+          // the sentence completes.
+          this.liveSentence.translation = translation;
+          this.liveSentence.translatedText = text;
+        } else if (
+          this.state.original !== '' &&
+          (text === this.state.original || isRelatedCaption(this.state.original, text))
+        ) {
+          // Exact translation for the pair already on screen.
+          this.setState({ translation, translating: false });
+          this.appendLiveHistory(this.state.original, translation, start);
+        }
       }
-      if (this.adapter) this.appendLiveHistory(text, translation, start);
     } catch {
-      // Drop the spinner so a failing provider degrades to "original only";
-      // the next caption tick retries.
-      if (seq > this.liveAppliedSeq) {
+      // A failing provider degrades to "original only"; the next sentence
+      // retries. Never leave the spinner up.
+      if (seq > this.liveAppliedSeq && this.state.translating) {
         this.setState({ translating: false });
       }
     } finally {

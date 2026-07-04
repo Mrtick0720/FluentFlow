@@ -133,12 +133,12 @@ function liveHarness(translate: (texts: string[]) => Promise<string[]>) {
 
 const latest = (states: SubtitleViewState[]) => states.at(-1)!;
 
-describe('SubtitleController live captions', () => {
+describe('SubtitleController live captions (whole-sentence mode)', () => {
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it('translates promptly and refines as the caption grows (no stability wait)', async () => {
+  it('buffers word-by-word captions and shows the full EN+ZH pair at the gap', async () => {
     vi.useFakeTimers();
     const requests: string[] = [];
     const harness = liveHarness(async ([text]) => {
@@ -147,95 +147,89 @@ describe('SubtitleController live captions', () => {
     });
     await harness.controller.attach('https://example.com/video');
 
-    harness.emit({ text: 'I am thrilled' });
-    await vi.advanceTimersByTimeAsync(120);
+    harness.emit({ text: 'Hello' });
+    await vi.advanceTimersByTimeAsync(120); // partial translated in the background
+    // Nothing renders while the sentence is still being spoken.
+    expect(latest(harness.states).original).toBe('');
+
+    harness.emit({ text: 'Hello world' });
+    expect(latest(harness.states).original).toBe('');
+
+    harness.emit(null); // sentence boundary
+    // The pair appears at once: full English + best-available Chinese.
     expect(latest(harness.states)).toMatchObject({
-      original: 'I am thrilled',
-      translation: '译：I am thrilled',
+      original: 'Hello world',
+      translation: '译：Hello',
+    });
+    // The exact translation replaces the partial one shortly after.
+    await vi.advanceTimersByTimeAsync(300);
+    expect(latest(harness.states)).toMatchObject({
+      original: 'Hello world',
+      translation: '译：Hello world',
       translating: false,
     });
-
-    // Growing caption: the partial translation stays visible, then refines —
-    // it must NOT wait for the caption to stop changing.
-    harness.emit({ text: 'I am thrilled we get to' });
-    expect(latest(harness.states)).toMatchObject({
-      original: 'I am thrilled we get to',
-      translation: '译：I am thrilled',
-    });
-    await vi.advanceTimersByTimeAsync(120);
-    expect(latest(harness.states).translation).toBe('译：I am thrilled we get to');
-
-    // A brand-new sentence drops the stale translation immediately.
-    harness.emit({ text: 'Second sentence' });
-    expect(latest(harness.states)).toMatchObject({
-      original: 'Second sentence',
-      translation: '',
-      translating: true,
-    });
-    await vi.advanceTimersByTimeAsync(200);
-    expect(requests).toEqual(['I am thrilled', 'I am thrilled we get to', 'Second sentence']);
+    expect(requests).toEqual(['Hello', 'Hello world']);
   });
 
-  it('fills the spinner with a stale result, then corrects it with the next one', async () => {
+  it('stitches rolling windows into one full sentence', async () => {
     vi.useFakeTimers();
-    const first = deferred<string[]>();
-    const second = deferred<string[]>();
-    const translate = vi
-      .fn<(texts: string[]) => Promise<string[]>>()
-      .mockReturnValueOnce(first.promise)
-      .mockReturnValueOnce(second.promise);
-    const harness = liveHarness(translate);
+    const harness = liveHarness(async ([text]) => [`译：${text}`]);
     await harness.controller.attach('https://example.com/video');
 
-    harness.emit({ text: 'First' });
-    await vi.advanceTimersByTimeAsync(200); // request 1 in flight
-    harness.emit({ text: 'Second' }); // unrelated → spinner, queued behind it
-    first.resolve(['旧中文']);
-    await vi.advanceTimersByTimeAsync(0);
-    // Policy: a slightly stale translation beats an endless spinner.
-    expect(latest(harness.states)).toMatchObject({
-      original: 'Second',
-      translation: '旧中文',
-      translating: false,
-    });
+    harness.emit({ text: 'a much speculated about' });
+    harness.emit({ text: 'much speculated about project' });
+    expect(latest(harness.states).original).toBe(''); // still buffering
 
-    await vi.advanceTimersByTimeAsync(200); // politeness gap → request 2
-    second.resolve(['新中文']);
-    await vi.advanceTimersByTimeAsync(0);
-    expect(latest(harness.states)).toMatchObject({
-      original: 'Second',
-      translation: '新中文',
-      translating: false,
-    });
+    harness.emit(null);
+    expect(latest(harness.states).original).toBe('a much speculated about project');
+    await vi.advanceTimersByTimeAsync(300);
+    expect(latest(harness.states).translation).toBe('译：a much speculated about project');
   });
 
-  it('clears translating after a current request fails', async () => {
+  it('replaces the previous pair when a new sentence starts without a gap', async () => {
+    vi.useFakeTimers();
+    const harness = liveHarness(async ([text]) => [`译：${text}`]);
+    await harness.controller.attach('https://example.com/video');
+
+    harness.emit({ text: 'First sentence here' });
+    await vi.advanceTimersByTimeAsync(120); // exact translation ready before the boundary
+    harness.emit({ text: 'Totally different words' }); // switch = boundary
+    expect(latest(harness.states)).toMatchObject({
+      original: 'First sentence here',
+      translation: '译：First sentence here',
+      translating: false,
+    });
+
+    harness.emit(null);
+    expect(latest(harness.states).original).toBe('Totally different words');
+  });
+
+  it('clears the panel after a long silence', async () => {
+    vi.useFakeTimers();
+    const harness = liveHarness(async ([text]) => [`译：${text}`]);
+    await harness.controller.attach('https://example.com/video');
+
+    harness.emit({ text: 'Hello there friend' });
+    await vi.advanceTimersByTimeAsync(120);
+    harness.emit(null);
+    expect(latest(harness.states).original).toBe('Hello there friend');
+
+    await vi.advanceTimersByTimeAsync(7000);
+    expect(latest(harness.states)).toMatchObject({ original: '', translation: '' });
+  });
+
+  it('degrades to English-only when translation fails', async () => {
     vi.useFakeTimers();
     const harness = liveHarness(async () => {
       throw new Error('offline');
     });
     await harness.controller.attach('https://example.com/video');
-    harness.emit({ text: 'Current caption' });
-    await vi.advanceTimersByTimeAsync(200);
-    expect(latest(harness.states)).toMatchObject({
-      original: 'Current caption',
-      translation: '',
-      translating: false,
-    });
-  });
 
-  it('ends the pending state when a caption disappears before translation', async () => {
-    vi.useFakeTimers();
-    const translate = vi.fn(async () => ['不会显示']);
-    const harness = liveHarness(translate);
-    await harness.controller.attach('https://example.com/video');
-    harness.emit({ text: 'Short caption' });
+    harness.emit({ text: 'Oops line' });
     harness.emit(null);
-    await vi.advanceTimersByTimeAsync(200);
-
-    expect(translate).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(300);
     expect(latest(harness.states)).toMatchObject({
-      original: 'Short caption',
+      original: 'Oops line',
       translation: '',
       translating: false,
     });
@@ -250,7 +244,7 @@ describe('SubtitleController live captions', () => {
     await vi.advanceTimersByTimeAsync(200);
     harness.controller.detach();
     pending.resolve(['迟到的翻译']);
-    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(0);
 
     expect(latest(harness.states)).toMatchObject({
       status: 'idle',
@@ -278,58 +272,6 @@ describe('mergeCaptions / isRelatedCaption', () => {
     expect(mergeCaptions('First sentence here', 'Totally different words')).toBeNull();
     expect(mergeCaptions('', 'anything')).toBeNull();
     expect(isRelatedCaption('one two', 'three four')).toBe(false);
-  });
-});
-
-describe('SubtitleController rolling captions', () => {
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('keeps translations flowing while the caption window rolls', async () => {
-    vi.useFakeTimers();
-    const harness = liveHarness(async ([text]) => [`译：${text}`]);
-    await harness.controller.attach('https://example.com/video');
-
-    harness.emit({ text: 'a much speculated about' });
-    await vi.advanceTimersByTimeAsync(120);
-    expect(latest(harness.states).translation).toBe('译：a much speculated about');
-
-    // Window rolls: leading word drops off. Must be treated as the same
-    // sentence — translation stays visible and then refreshes; the panel must
-    // never fall back into a permanent "翻译中…" state.
-    harness.emit({ text: 'much speculated about project' });
-    expect(latest(harness.states)).toMatchObject({
-      original: 'much speculated about project',
-      translation: '译：a much speculated about',
-      translating: false,
-    });
-    await vi.advanceTimersByTimeAsync(200);
-    expect(latest(harness.states).translation).toBe('译：much speculated about project');
-  });
-
-  it('applies a slightly stale result rather than showing an endless spinner', async () => {
-    vi.useFakeTimers();
-    const first = deferred<string[]>();
-    const translate = vi
-      .fn<(texts: string[]) => Promise<string[]>>()
-      .mockReturnValueOnce(first.promise)
-      .mockResolvedValue(['译：当前']);
-    const harness = liveHarness(translate);
-    await harness.controller.attach('https://example.com/video');
-
-    harness.emit({ text: 'First sentence' });
-    await vi.advanceTimersByTimeAsync(200); // request 1 in flight
-    harness.emit({ text: 'Unrelated new words' }); // spinner state, queued
-    first.resolve(['译：第一句']);
-    await vi.advanceTimersByTimeAsync(0);
-    // Stale but applied: better than a stuck spinner; next request corrects it.
-    expect(latest(harness.states)).toMatchObject({
-      translation: '译：第一句',
-      translating: false,
-    });
-    await vi.advanceTimersByTimeAsync(200);
-    expect(latest(harness.states).translation).toBe('译：当前');
   });
 });
 
