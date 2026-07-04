@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
+import { COMMON_LANGUAGES } from '@/shared/constants';
 import { uiStore, type UIState } from './store';
 import { getSubtitleOverlayGeometry } from './subtitleLayout';
 
@@ -35,6 +36,9 @@ export interface UIActions {
   togglePlayerMenu(anchor: { left: number; top: number }): void;
   openSettings(): void;
   quickTranslate(): void;
+  immersiveTranslate(): void;
+  closeQuickTranslate(): void;
+  translateText(text: string, from: string, to: string): Promise<string>;
 }
 
 const GearIcon = () => (
@@ -78,6 +82,7 @@ export function App({ actions }: { actions: UIActions }) {
       {ui.subtitleVisible && ui.subtitleState && <SubtitlePanel ui={ui} actions={actions} />}
       {ui.subtitleVisible && ui.transcriptVisible && <TranscriptPanel ui={ui} actions={actions} />}
       {ui.playerMenu && <PlayerMenu ui={ui} actions={actions} />}
+      {ui.quickTranslateOpen && <QuickTranslate actions={actions} />}
       <FabStack ui={ui} actions={actions} />
       {ui.toast && (
         <div className="lf-toast" role="status">
@@ -245,6 +250,105 @@ function SentenceCard({ ui, actions }: { ui: UIState; actions: UIActions }) {
   );
 }
 
+const QT_SOURCE = [{ code: 'auto', label: '自动检测' }, ...COMMON_LANGUAGES];
+
+/** Quick-translate scratchpad: type on the left, see the translation on the right. */
+function QuickTranslate({ actions }: { actions: UIActions }) {
+  const [from, setFrom] = useState('auto');
+  const [to, setTo] = useState('zh-CN');
+  const [input, setInput] = useState('');
+  const [output, setOutput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const reqId = useRef(0);
+
+  useEffect(() => {
+    const text = input.trim();
+    if (!text) {
+      setOutput('');
+      return;
+    }
+    const id = ++reqId.current;
+    setLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const result = await actions.translateText(text, from, to);
+        if (id === reqId.current) setOutput(result);
+      } catch (e) {
+        if (id === reqId.current) setOutput(`翻译失败：${e instanceof Error ? e.message : String(e)}`);
+      } finally {
+        if (id === reqId.current) setLoading(false);
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [input, from, to, actions]);
+
+  const swap = () => {
+    setFrom(to);
+    setTo(from === 'auto' ? 'en' : from);
+    setInput(output);
+    setOutput(input);
+  };
+
+  return (
+    <>
+      <div className="lf-qt-backdrop" onClick={actions.closeQuickTranslate} />
+      <div className="lf-qt" role="dialog" aria-label="快捷翻译">
+        <div className="lf-qt-cols">
+          <div className="lf-qt-col">
+            <select
+              className="lf-qt-lang"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+              aria-label="输入语言"
+            >
+              {QT_SOURCE.map((l) => (
+                <option key={l.code} value={l.code}>
+                  {l.label}
+                </option>
+              ))}
+            </select>
+            <textarea
+              className="lf-qt-input"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="输入或粘贴要翻译的文本…"
+              autoFocus
+            />
+          </div>
+
+          <button className="lf-qt-swap" onClick={swap} title="交换语言" aria-label="交换语言">
+            ⇄
+          </button>
+
+          <div className="lf-qt-col">
+            <select
+              className="lf-qt-lang"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              aria-label="输出语言"
+            >
+              {COMMON_LANGUAGES.map((l) => (
+                <option key={l.code} value={l.code}>
+                  {l.label}
+                </option>
+              ))}
+            </select>
+            <div className="lf-qt-output">
+              {loading ? <span className="lf-muted">翻译中…</span> : output}
+            </div>
+          </div>
+        </div>
+        <div className="lf-qt-footer">
+          <span className="lf-muted">LinguaFlow · 快捷翻译</span>
+          <button className="lf-btn" onClick={actions.closeQuickTranslate}>
+            关闭
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
 /** Quick-action menu opened from the YouTube control-bar button. */
 function PlayerMenu({ ui, actions }: { ui: UIState; actions: UIActions }) {
   const { x, y } = ui.playerMenu!;
@@ -341,8 +445,8 @@ function FabStack({ ui, actions }: { ui: UIState; actions: UIActions }) {
         </button>
         <button
           className={`lf-fab lf-fab-mini lf-fab-immersive ${ui.pageActive ? 'lf-active' : ''}`}
-          onClick={actions.togglePage}
-          title="沉浸翻译"
+          onClick={actions.immersiveTranslate}
+          title="沉浸翻译（原文在上，译文在下）"
           aria-label="沉浸翻译"
         >
           <ImmersiveIcon />

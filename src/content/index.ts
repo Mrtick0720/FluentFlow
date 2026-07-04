@@ -592,7 +592,22 @@ async function main() {
       uiStore.set({ playerMenu: open ? null : { x: anchor.left, y: anchor.top } });
     },
     openSettings: () => void sendRequest('options.open', {}).catch(() => {}),
-    quickTranslate: () => showToast('快捷翻译：功能开发中，稍后完善'),
+    quickTranslate: () => {
+      uiStore.set({ quickTranslateOpen: !uiStore.get().quickTranslateOpen, playerMenu: null });
+    },
+    closeQuickTranslate: () => uiStore.set({ quickTranslateOpen: false }),
+    translateText: async (text, from, to) => {
+      const res = await sendRequest('translation.translate', { texts: [text], from, to });
+      return res.translations[0] ?? '';
+    },
+    // 沉浸翻译: always bilingual (original on top, translation below).
+    immersiveTranslate: () => {
+      if (!translator.active) {
+        translator.setMode('bilingual');
+        void sendRequest('settings.set', { patch: { displayMode: 'bilingual' } }).catch(() => {});
+      }
+      togglePage();
+    },
   };
 
   createRoot(mount).render(createElement(App, { actions }));

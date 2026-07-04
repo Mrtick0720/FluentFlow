@@ -15,6 +15,7 @@ export const COMMON_LANGUAGES: Array<{ code: string; label: string }> = [
   { code: 'en', label: 'English' },
   { code: 'ja', label: '日本語' },
   { code: 'ko', label: '한국어' },
+  { code: 'ms', label: 'Bahasa Melayu' },
   { code: 'fr', label: 'Français' },
   { code: 'de', label: 'Deutsch' },
   { code: 'es', label: 'Español' },

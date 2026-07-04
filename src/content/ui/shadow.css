@@ -581,6 +581,105 @@
   cursor: not-allowed;
 }
 
+/* ---------- quick-translate window ---------- */
+
+.lf-qt-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 12, 20, 0.35);
+  z-index: 1;
+}
+
+.lf-qt {
+  position: fixed;
+  left: 50%;
+  top: 12vh;
+  transform: translateX(-50%);
+  width: min(760px, calc(100vw - 32px));
+  background: var(--lf-bg);
+  border: 1px solid var(--lf-border);
+  border-radius: 16px;
+  box-shadow: var(--lf-shadow);
+  z-index: 2;
+  overflow: hidden;
+}
+
+.lf-qt-cols {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: stretch;
+}
+
+.lf-qt-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 12px 14px;
+}
+
+.lf-qt-col:last-child {
+  border-left: 1px solid var(--lf-border);
+}
+
+.lf-qt-lang {
+  align-self: flex-start;
+  border: 1px solid var(--lf-border);
+  background: var(--lf-bg);
+  color: var(--lf-fg);
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 13px;
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+
+.lf-qt-input,
+.lf-qt-output {
+  flex: 1;
+  min-height: 150px;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--lf-fg);
+}
+
+.lf-qt-input {
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  font-family: inherit;
+}
+
+.lf-qt-output {
+  white-space: pre-wrap;
+  overflow-y: auto;
+}
+
+.lf-qt-swap {
+  align-self: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid var(--lf-border);
+  background: var(--lf-bg);
+  color: var(--lf-fg);
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.lf-qt-swap:hover {
+  background: var(--lf-accent-soft);
+  border-color: var(--lf-accent);
+}
+
+.lf-qt-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  border-top: 1px solid var(--lf-border);
+}
+
 /* ---------- toast ---------- */
 
 .lf-toast {

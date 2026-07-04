@@ -48,6 +48,8 @@ export interface UIState {
   aiAvailable: boolean;
   /** Quick-action menu anchored to the YouTube control-bar button. */
   playerMenu: { x: number; y: number } | null;
+  /** Quick-translate scratchpad window (input → output with language pickers). */
+  quickTranslateOpen: boolean;
   toast: string | null;
 }
 
@@ -67,6 +69,7 @@ const initial: UIState = {
   progress: { done: 0, total: 0 },
   aiAvailable: false,
   playerMenu: null,
+  quickTranslateOpen: false,
   toast: null,
 };
 
