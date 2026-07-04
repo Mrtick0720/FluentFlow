@@ -252,11 +252,11 @@ export function Options() {
               }}
             />
           </Field>
-          <Field label="模型">
+          <Field label="模型" hint="填 API 模型 ID（小写连字符），非显示名。如 deepseek-chat、gemini-2.0-flash">
             <SavedInput
               value={settings.providers.custom?.model ?? ''}
-              placeholder="如 gpt-4o-mini"
-              onSave={(v) => setProvider('custom', { model: v })}
+              placeholder="如 gemini-2.0-flash"
+              onSave={(v) => setProvider('custom', { model: v.trim() })}
             />
           </Field>
           <Field label="Key（可选）">
