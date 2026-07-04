@@ -6,6 +6,7 @@ import { BbcAdapter } from '@/adapters/bbc';
 import { GenericHtml5Adapter } from '@/adapters/generic';
 import { TedAdapter } from '@/adapters/ted';
 import { YouTubeAdapter } from '@/adapters/youtube';
+import { initTimedTextCapture, onTimedTextCaptured } from '@/adapters/youtube/timedtext';
 import {
   explainDifficultWordsPrompt,
   explainGrammarPrompt,
@@ -108,6 +109,21 @@ async function main() {
     }
   }
   detectVideo();
+
+  // YouTube: once the player fetches captions (user enables CC), the page
+  // hook hands us a valid full-transcript URL — upgrade live mode to the
+  // complete track without the user doing anything else.
+  if (/(^|\.)youtube\.com$/.test(location.hostname)) {
+    initTimedTextCapture();
+    onTimedTextCaptured(() => {
+      const ui = uiStore.get();
+      if (ui.subtitleVisible && ui.subtitleState?.mode === 'live') {
+        void subtitleController.attach(location.href).then(() => {
+          showToast('已获取完整字幕，切换到整片模式');
+        });
+      }
+    });
+  }
 
   let stopVideoLayoutSync: (() => void) | null = null;
 

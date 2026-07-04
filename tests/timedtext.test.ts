@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   extractCaptionTracks,
+  normalizeTimedTextUrl,
   pickCaptionTrack,
   segmentsFromTimedText,
+  timedTextVideoId,
 } from '@/adapters/youtube/timedtext';
 
 describe('extractCaptionTracks', () => {
@@ -22,6 +24,29 @@ describe('extractCaptionTracks', () => {
   it('returns [] when the marker is missing or malformed', () => {
     expect(extractCaptionTracks('<html>no captions</html>')).toEqual([]);
     expect(extractCaptionTracks('"captionTracks":[{"broken":')).toEqual([]);
+  });
+});
+
+describe('normalizeTimedTextUrl', () => {
+  it('forces json3 and drops player auto-translate, keeping the POT token', () => {
+    const raw =
+      'https://www.youtube.com/api/timedtext?v=abc&lang=en&pot=TOKEN123&fmt=srv3&tlang=zh-Hans';
+    const url = new URL(normalizeTimedTextUrl(raw));
+    expect(url.searchParams.get('fmt')).toBe('json3');
+    expect(url.searchParams.get('tlang')).toBeNull();
+    expect(url.searchParams.get('pot')).toBe('TOKEN123');
+    expect(url.searchParams.get('lang')).toBe('en');
+  });
+
+  it('resolves relative URLs against the YouTube origin', () => {
+    expect(normalizeTimedTextUrl('/api/timedtext?v=abc&lang=en')).toContain(
+      'https://www.youtube.com/api/timedtext',
+    );
+  });
+
+  it('extracts the video id for stale-capture rejection', () => {
+    expect(timedTextVideoId('https://www.youtube.com/api/timedtext?v=abc&lang=en')).toBe('abc');
+    expect(timedTextVideoId('not a url')).toBeNull();
   });
 });
 

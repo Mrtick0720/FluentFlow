@@ -11,6 +11,51 @@ import type { SubtitleSegment, SubtitleTrack } from '@/types/models';
  * transcript panel shows — no login, DRM, or protection is bypassed.
  */
 
+/* ---------- player-URL capture (POT-signed) ----------
+ * YouTube's timedtext endpoint now requires a proof-of-origin token that only
+ * the live player generates: the bare baseUrl from page HTML returns an empty
+ * body. A read-only MAIN-world hook (public/pagehook.js) reports the URL the
+ * player itself fetches (available once the user enables CC); we reuse it.
+ */
+
+let capturedUrl: string | null = null;
+const captureCallbacks: Array<(url: string) => void> = [];
+
+export function initTimedTextCapture(): void {
+  window.addEventListener('message', (event) => {
+    if (event.source !== window || event.origin !== location.origin) return;
+    const data = event.data as { source?: string; type?: string; url?: string } | null;
+    if (data?.source !== 'linguaflow-pagehook' || data.type !== 'timedtext-url') return;
+    if (typeof data.url !== 'string' || !data.url.includes('/api/timedtext')) return;
+    const changed = data.url !== capturedUrl;
+    capturedUrl = data.url;
+    if (changed) for (const cb of captureCallbacks) cb(data.url);
+  });
+  // Ask the hook for anything it saw before we loaded.
+  window.postMessage({ source: 'linguaflow', type: 'timedtext-query' }, location.origin);
+}
+
+export function onTimedTextCaptured(cb: (url: string) => void): void {
+  captureCallbacks.push(cb);
+}
+
+/** Ask for the full track in json3, in the source language (drop player auto-translate). */
+export function normalizeTimedTextUrl(raw: string, origin = 'https://www.youtube.com'): string {
+  const url = new URL(raw, origin);
+  url.searchParams.set('fmt', 'json3');
+  url.searchParams.delete('tlang');
+  return url.toString();
+}
+
+/** The v= param of a timedtext URL, to reject captures from a previous video. */
+export function timedTextVideoId(raw: string, origin = 'https://www.youtube.com'): string | null {
+  try {
+    return new URL(raw, origin).searchParams.get('v');
+  } catch {
+    return null;
+  }
+}
+
 export interface CaptionTrackInfo {
   baseUrl: string;
   languageCode: string;
@@ -139,23 +184,59 @@ function trackLabel(info: CaptionTrackInfo): string {
   return name || info.languageCode;
 }
 
+async function fetchSegments(url: string): Promise<SubtitleSegment[]> {
+  const res = await fetch(url, { credentials: 'same-origin' });
+  if (!res.ok) return [];
+  const body = await res.text();
+  if (!body) return []; // POT-rejected requests return 200 with an empty body
+  try {
+    return segmentsFromTimedText(JSON.parse(body) as { events?: Json3Event[] });
+  } catch {
+    return [];
+  }
+}
+
+function currentVideoId(): string | null {
+  return new URLSearchParams(location.search).get('v');
+}
+
 /**
  * Fetch the full transcript for the video on the current watch page.
- * Returns [] when no caption data is available (caller falls back to
- * live caption mirroring).
+ * Prefers the POT-signed URL the player itself used (captured by the page
+ * hook once the user enables CC); falls back to the bare baseUrl, which
+ * still works in some regions. Returns [] when nothing is available
+ * (caller falls back to live caption mirroring).
  */
 export async function fetchYouTubeTranscript(): Promise<SubtitleTrack[]> {
+  // 1) The player's own caption request, reused verbatim (minus format).
+  if (capturedUrl) {
+    const videoId = currentVideoId();
+    const capturedFor = timedTextVideoId(capturedUrl, location.origin);
+    if (!videoId || !capturedFor || capturedFor === videoId) {
+      const segments = await fetchSegments(normalizeTimedTextUrl(capturedUrl, location.origin));
+      if (segments.length > 0) {
+        const lang = new URL(capturedUrl, location.origin).searchParams.get('lang') ?? 'und';
+        return [
+          {
+            id: 'yt-transcript',
+            label: `${lang} · 完整字幕`,
+            language: lang,
+            kind: 'captions',
+            segments,
+          },
+        ];
+      }
+    }
+  }
+
+  // 2) Bare baseUrl from the watch page (may be rejected with an empty body).
   const pageRes = await fetch(location.href, { credentials: 'same-origin' });
   if (!pageRes.ok) return [];
   const tracks = extractCaptionTracks(await pageRes.text());
   const info = pickCaptionTrack(tracks);
   if (!info) return [];
 
-  const url = new URL(info.baseUrl, location.origin);
-  url.searchParams.set('fmt', 'json3');
-  const ttRes = await fetch(url, { credentials: 'same-origin' });
-  if (!ttRes.ok) return [];
-  const segments = segmentsFromTimedText((await ttRes.json()) as { events?: Json3Event[] });
+  const segments = await fetchSegments(normalizeTimedTextUrl(info.baseUrl, location.origin));
   if (segments.length === 0) return [];
 
   return [
