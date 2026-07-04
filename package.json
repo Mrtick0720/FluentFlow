@@ -8,7 +8,7 @@
     "build": "npm run build:main && npm run build:content",
     "build:main": "vite build --config vite.config.ts",
     "build:content": "vite build --config vite.content.config.ts",
-    "dev": "npm run build -- --watch",
+    "dev": "npm run build && (vite build --watch --emptyOutDir false --config vite.config.ts & vite build --watch --emptyOutDir false --config vite.content.config.ts & wait)",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
