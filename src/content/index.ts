@@ -582,6 +582,10 @@ async function main() {
     openSidePanel: () => void sendRequest('sidepanel.open', null).catch(() => {}),
     openSubtitleStyle: () => void sendRequest('options.open', { hash: 'subtitle' }).catch(() => {}),
     closePlayerMenu: () => uiStore.set({ playerMenu: null }),
+    togglePlayerMenu: (anchor) => {
+      const open = uiStore.get().playerMenu !== null;
+      uiStore.set({ playerMenu: open ? null : { x: anchor.left, y: anchor.top } });
+    },
   };
 
   createRoot(mount).render(createElement(App, { actions }));

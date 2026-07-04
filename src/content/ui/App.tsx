@@ -32,6 +32,7 @@ export interface UIActions {
   openSidePanel(): void;
   openSubtitleStyle(): void;
   closePlayerMenu(): void;
+  togglePlayerMenu(anchor: { left: number; top: number }): void;
 }
 
 function useUI(): UIState {
@@ -279,22 +280,35 @@ function FabStack({ ui, actions }: { ui: UIState; actions: UIActions }) {
           bottom: 'auto',
         } as CSSProperties)
       : undefined;
+
+  // On video pages, collapse to a single logo button that opens the quick
+  // menu (subtitles / translate / style / panel) instead of a 3-button stack.
+  if (ui.videoDetected) {
+    return (
+      <div className="lf-fab-stack" style={anchored}>
+        {ui.pageActive && ui.progress.total > 0 && ui.progress.done < ui.progress.total && (
+          <span className="lf-fab-progress">
+            {ui.progress.done}/{ui.progress.total}
+          </span>
+        )}
+        <button
+          className={`lf-fab lf-fab-brand ${ui.playerMenu ? 'lf-active' : ''}`}
+          onClick={(e) => actions.togglePlayerMenu(e.currentTarget.getBoundingClientRect())}
+          title="LinguaFlow 菜单"
+          aria-label="LinguaFlow 菜单"
+        >
+          <img src={chrome.runtime.getURL('icons/icon48.png')} alt="" />
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="lf-fab-stack" style={anchored}>
       {ui.pageActive && ui.progress.total > 0 && ui.progress.done < ui.progress.total && (
         <span className="lf-fab-progress">
           {ui.progress.done}/{ui.progress.total}
         </span>
-      )}
-      {ui.videoDetected && (
-        <button
-          className={`lf-fab ${ui.subtitleVisible ? 'lf-active' : ''}`}
-          onClick={actions.toggleSubtitlePanel}
-          title="字幕学习"
-          aria-label="字幕学习"
-        >
-          CC
-        </button>
       )}
       <button
         className="lf-fab"
