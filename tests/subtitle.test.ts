@@ -208,6 +208,42 @@ describe('SubtitleController live captions', () => {
       translating: false,
     });
   });
+
+  it('ends the pending state when a caption disappears before translation', async () => {
+    vi.useFakeTimers();
+    const translate = vi.fn(async () => ['不会显示']);
+    const harness = liveHarness(translate);
+    await harness.controller.attach('https://example.com/video');
+    harness.emit({ text: 'Short caption' });
+    harness.emit(null);
+    await vi.advanceTimersByTimeAsync(200);
+
+    expect(translate).not.toHaveBeenCalled();
+    expect(latest(harness.states)).toMatchObject({
+      original: 'Short caption',
+      translation: '',
+      translating: false,
+    });
+  });
+
+  it('ignores a translation that resolves after detach', async () => {
+    vi.useFakeTimers();
+    const pending = deferred<string[]>();
+    const harness = liveHarness(() => pending.promise);
+    await harness.controller.attach('https://example.com/video');
+    harness.emit({ text: 'Leaving now' });
+    await vi.advanceTimersByTimeAsync(200);
+    harness.controller.detach();
+    pending.resolve(['迟到的翻译']);
+    await Promise.resolve();
+
+    expect(latest(harness.states)).toMatchObject({
+      status: 'idle',
+      original: '',
+      translation: '',
+      translating: false,
+    });
+  });
 });
 
 describe('YouTubeAdapter caption selection', () => {

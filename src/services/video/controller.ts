@@ -336,6 +336,8 @@ export class SubtitleController {
     // Empty gap between cues: keep the last line visible instead of blanking,
     // and use the gap as the sentence boundary in learning mode.
     if (!text) {
+      clearTimeout(this.liveDebounce);
+      this.setState({ translating: false });
       if (this.autoPause && hadText) this.video?.pause();
       return;
     }
