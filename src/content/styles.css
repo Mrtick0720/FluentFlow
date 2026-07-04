@@ -50,11 +50,11 @@
 /* Tiny inline spinner shown after a paragraph while it is being translated. */
 .lf-loading {
   display: inline-block;
-  width: 0.8em;
-  height: 0.8em;
-  margin-left: 0.35em;
-  vertical-align: -0.05em;
-  border: 2px solid color-mix(in srgb, currentColor 28%, transparent);
+  width: 0.4em;
+  height: 0.4em;
+  margin-left: 0.3em;
+  vertical-align: 0.05em;
+  border: 1.5px solid color-mix(in srgb, currentColor 28%, transparent);
   border-top-color: currentColor;
   border-radius: 50%;
   opacity: 0.55;
