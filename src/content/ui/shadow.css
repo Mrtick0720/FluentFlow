@@ -54,7 +54,7 @@
   padding: 14px 16px;
   max-width: 380px;
   min-width: 260px;
-  max-height: 60vh;
+  max-height: 85vh;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -310,7 +310,7 @@
   border-radius: 8px;
   white-space: pre-wrap;
   font-size: 13px;
-  max-height: 220px;
+  max-height: 52vh;
   overflow-y: auto;
 }
 

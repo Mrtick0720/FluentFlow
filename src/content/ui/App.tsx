@@ -73,13 +73,52 @@ function popupPosition(x: number, y: number, width = 380): CSSProperties {
   };
 }
 
+/**
+ * Make a word/sentence card draggable. Starts at its anchor position; dragging
+ * any non-interactive part of the card repositions it (buttons and the
+ * scrollable answer keep working).
+ */
+function useDraggableCard(x: number, y: number, width = 380) {
+  const base = popupPosition(x, y, width);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const dragRef = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null);
+
+  const style: CSSProperties = { ...(pos ?? base), cursor: 'move' };
+
+  const onPointerDown = (e: ReactPointerEvent) => {
+    const el = e.target as HTMLElement;
+    if (el.closest('button, a, input, textarea, select, [contenteditable], .lf-ai-answer')) return;
+    const start = pos ?? { left: Number(base.left) || 0, top: Number(base.top) || 0 };
+    dragRef.current = { sx: e.clientX, sy: e.clientY, ox: start.left, oy: start.top };
+    const onMove = (ev: PointerEvent) => {
+      const d = dragRef.current;
+      if (!d) return;
+      setPos({
+        left: Math.max(4, Math.min(d.ox + (ev.clientX - d.sx), window.innerWidth - 60)),
+        top: Math.max(4, Math.min(d.oy + (ev.clientY - d.sy), window.innerHeight - 40)),
+      });
+    };
+    const onUp = () => {
+      dragRef.current = null;
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+
+  return { style, onPointerDown };
+}
+
 export function App({ actions }: { actions: UIActions }) {
   const ui = useUI();
   return (
     <div className="lf-layer" aria-live="polite">
       {ui.toolbar && <SelectionToolbar ui={ui} actions={actions} />}
-      {ui.wordCard && <WordCard ui={ui} actions={actions} />}
-      {ui.sentenceCard && <SentenceCard ui={ui} actions={actions} />}
+      {ui.wordCard && <WordCard key={`${ui.wordCard.x},${ui.wordCard.y}`} ui={ui} actions={actions} />}
+      {ui.sentenceCard && (
+        <SentenceCard key={`${ui.sentenceCard.x},${ui.sentenceCard.y}`} ui={ui} actions={actions} />
+      )}
       {ui.subtitleVisible && ui.subtitleState && <SubtitlePanel ui={ui} actions={actions} />}
       {ui.subtitleVisible && ui.transcriptVisible && <TranscriptPanel ui={ui} actions={actions} />}
       {ui.playerMenu && <PlayerMenu ui={ui} actions={actions} />}
@@ -125,8 +164,15 @@ function SelectionToolbar({ ui, actions }: { ui: UIState; actions: UIActions }) 
 
 function WordCard({ ui, actions }: { ui: UIState; actions: UIActions }) {
   const card = ui.wordCard!;
+  const drag = useDraggableCard(card.x, card.y);
   return (
-    <div className="lf-card" style={popupPosition(card.x, card.y)} role="dialog" aria-label={`Dictionary: ${card.word}`}>
+    <div
+      className="lf-card"
+      style={drag.style}
+      onPointerDown={drag.onPointerDown}
+      role="dialog"
+      aria-label={`Dictionary: ${card.word}`}
+    >
       <button className="lf-close" onClick={actions.closeWordCard} aria-label="关闭">
         ✕
       </button>
@@ -200,8 +246,15 @@ function WordCard({ ui, actions }: { ui: UIState; actions: UIActions }) {
 
 function SentenceCard({ ui, actions }: { ui: UIState; actions: UIActions }) {
   const card = ui.sentenceCard!;
+  const drag = useDraggableCard(card.x, card.y);
   return (
-    <div className="lf-card" style={popupPosition(card.x, card.y)} role="dialog" aria-label="Sentence learning">
+    <div
+      className="lf-card"
+      style={drag.style}
+      onPointerDown={drag.onPointerDown}
+      role="dialog"
+      aria-label="Sentence learning"
+    >
       <button className="lf-close" onClick={actions.closeSentenceCard} aria-label="关闭">
         ✕
       </button>
