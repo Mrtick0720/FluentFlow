@@ -21,6 +21,7 @@ const FIXTURE_HTML = `<!doctype html>
     <a id="nba-logo" href="/"><img alt="NBA Logo"></a>
     <ul>
       <li id="summer"><a href="/summer"><span id="summer-label">Summer League</span></a></li>
+      <li id="weekly"><a id="weekly-link" href="/weeklyedition">Weekly edition</a></li>
       <li id="teams"><a href="/teams"><span id="teams-label">Teams</span></a>
         <div id="teams-dropdown" class="dropdown">Atlantic Boston Celtics Brooklyn Nets New York Knicks Philadelphia 76ers Toronto Raptors</div>
       </li>
@@ -66,6 +67,7 @@ function startServer(): Promise<{ server: http.Server; port: number }> {
         const texts = JSON.parse(userMsg.content) as string[];
         const labels: Record<string, string> = {
           'Summer League': '夏季联赛',
+          'Weekly edition': '每周版',
           Teams: '球队',
         };
         const content = JSON.stringify({
@@ -157,9 +159,15 @@ test('loads the extension and translates a page end-to-end', async () => {
     // translation of every team name.
     await expect(page.locator('#summer-label.lf-replaced')).toHaveCount(1);
     await expect(page.locator('#teams-label.lf-replaced')).toHaveCount(1);
-    await expect(page.locator('#summer.lf-replaced, #teams.lf-replaced')).toHaveCount(0);
+    await expect(page.locator('#summer.lf-replaced, #weekly.lf-replaced, #teams.lf-replaced')).toHaveCount(0);
     await expect(page.locator('#teams-dropdown')).toBeHidden();
     await expect(page.locator('#teams')).not.toContainText('译文：TeamsAtlantic');
+
+    // Economist-style nav labels are direct text children of <a>. Translate
+    // the anchor itself so its href and complete clickable hit area survive.
+    await expect(page.locator('#weekly-link.lf-replaced')).toHaveCount(1);
+    await expect(page.locator('#weekly-link')).toHaveAttribute('href', '/weeklyedition');
+    await expect(page.locator('#weekly-link .lf-trans')).toHaveText('每周版');
 
     // In-place labels preserve the host nav's single-line geometry and do not
     // move the adjacent NBA logo.

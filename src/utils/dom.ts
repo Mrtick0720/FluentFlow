@@ -18,7 +18,10 @@ const CANDIDATE_SELECTOR = [
   'td',
   'th',
   // Navigation items often keep hidden dropdown/mega-menu content inside the
-  // same <li>. Translate the visible label leaf, never the structural <li>.
+  // same <li>. Translate the link/control (or its deeper label span), never
+  // the structural <li>, so hrefs and click handlers remain intact.
+  'nav li > a',
+  'nav li > button',
   'nav a > span',
   'nav button > span',
 ].join(',');
