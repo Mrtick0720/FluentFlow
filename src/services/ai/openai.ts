@@ -1,5 +1,6 @@
 import type { AIMessage } from '@/types/models';
 import { expectOk, networkError } from '@/services/translation/provider';
+import { normalizeOpenAIBaseUrl } from '@/utils/url';
 import { AIError, readSSE, type AIProvider } from './provider';
 
 export interface OpenAICompatibleConfig {
@@ -13,7 +14,7 @@ export class OpenAICompatibleAI implements AIProvider {
   constructor(private config: OpenAICompatibleConfig) {}
 
   private async request(messages: AIMessage[], stream: boolean): Promise<Response> {
-    const baseUrl = this.config.baseUrl.replace(/\/$/, '');
+    const baseUrl = normalizeOpenAIBaseUrl(this.config.baseUrl);
     let res: Response;
     try {
       res = await fetch(`${baseUrl}/chat/completions`, {

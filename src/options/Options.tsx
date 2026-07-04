@@ -221,7 +221,7 @@ export function Options() {
           </Field>
         </div>
         <div className="grid grid-cols-3 gap-3">
-          <Field label="自定义端点 Base URL" hint="OpenAI 兼容，如 http://localhost:11434/v1">
+          <Field label="自定义端点 Base URL" hint="OpenAI 兼容，需带 /v1，如 https://free.v36.cm/v1">
             <SavedInput
               value={settings.providers.custom?.baseUrl ?? ''}
               placeholder="https://…/v1"
@@ -234,7 +234,7 @@ export function Options() {
           <Field label="模型">
             <SavedInput
               value={settings.providers.custom?.model ?? ''}
-              placeholder="如 qwen2.5"
+              placeholder="如 gpt-4o-mini"
               onSave={(v) => setProvider('custom', { model: v })}
             />
           </Field>
@@ -245,8 +245,25 @@ export function Options() {
             />
           </Field>
         </div>
+        {settings.providers.custom?.baseUrl && (
+          <EndpointTester
+            getUrl={() => settings.providers.custom?.baseUrl}
+            run={async () => {
+              const r = await sendRequest('translation.translate', {
+                texts: ['Hello, world.'],
+                from: 'en',
+                to: settings.targetLanguage,
+                provider: 'custom',
+                refresh: true,
+              });
+              return `连接成功：${r.translations[0] || '(空)'}`;
+            }}
+          />
+        )}
         <p className="text-xs text-slate-400">
-          密钥在输入框失焦或按回车时保存；使用 AES-GCM 加密存储在本地，只在后台解密，绝不上传。
+          若要用自定义端点翻译，记得把上方「默认引擎」选为「自定义端点」。Base URL 结尾需带
+          <code className="mx-1 rounded bg-slate-100 px-1 dark:bg-slate-800">/v1</code>
+          （漏填会自动补上）。密钥失焦/回车保存，AES-GCM 本地加密，绝不上传。
         </p>
       </Section>
 
@@ -304,15 +321,6 @@ export function Options() {
                 }}
               />
             </Field>
-            {settings.ai.baseUrl && (
-              <Button
-                onClick={async () =>
-                  flash((await grantOrigin(settings.ai.baseUrl!)) ? '已授权访问该端点' : '未授权')
-                }
-              >
-                为该端点授权访问权限
-              </Button>
-            )}
           </>
         )}
         {settings.ai.kind !== 'none' && (
@@ -325,6 +333,17 @@ export function Options() {
               }}
             />
           </Field>
+        )}
+        {settings.ai.kind !== 'none' && (
+          <EndpointTester
+            getUrl={() => settings.ai.baseUrl}
+            run={async () => {
+              const r = await sendRequest('ai.complete', {
+                messages: [{ role: 'user', content: '只回复两个字：你好' }],
+              });
+              return `连接成功：${r.text.slice(0, 24) || '(空)'}`;
+            }}
+          />
         )}
       </Section>
 
@@ -439,6 +458,47 @@ export function Options() {
           }}
         />
       </Section>
+    </div>
+  );
+}
+
+/**
+ * Runs a live round-trip against a configured endpoint and shows the real
+ * result or error, so a misconfigured URL / key / model stops failing
+ * silently. Requests the origin permission first (button click is a user
+ * gesture, required for chrome.permissions.request).
+ */
+function EndpointTester({
+  getUrl,
+  run,
+}: {
+  getUrl: () => string | undefined;
+  run: () => Promise<string>;
+}) {
+  const [state, setState] = useState<'idle' | 'testing' | 'ok' | 'err'>('idle');
+  const [msg, setMsg] = useState('');
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button
+        disabled={state === 'testing'}
+        onClick={async () => {
+          setState('testing');
+          setMsg('');
+          try {
+            const url = getUrl();
+            if (url) await grantOrigin(url);
+            setMsg(await run());
+            setState('ok');
+          } catch (e) {
+            setMsg(e instanceof Error ? e.message : String(e));
+            setState('err');
+          }
+        }}
+      >
+        {state === 'testing' ? '测试中…' : '测试连接'}
+      </Button>
+      {state === 'ok' && <span className="text-xs text-green-600 dark:text-green-400">✓ {msg}</span>}
+      {state === 'err' && <span className="max-w-md break-all text-xs text-red-500">✗ {msg}</span>}
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import type { ProviderSettings } from '@/shared/settings';
+import { normalizeOpenAIBaseUrl } from '@/utils/url';
 import { expectOk, networkError, TranslationError, type TranslateParams } from './provider';
 
 const SYSTEM_PROMPT = `You are a professional translator. Translate each string in the JSON array the user sends from {FROM} to {TO}.
@@ -17,7 +18,7 @@ export async function openAICompatibleTranslate(
   if (!config.apiKey && !config.baseUrl) {
     throw new TranslationError('auth', `${providerName}: API key not configured`);
   }
-  const baseUrl = (config.baseUrl || defaults.baseUrl).replace(/\/$/, '');
+  const baseUrl = normalizeOpenAIBaseUrl(config.baseUrl || defaults.baseUrl);
   const model = config.model || defaults.model;
   const system = SYSTEM_PROMPT.replace(
     '{FROM}',
