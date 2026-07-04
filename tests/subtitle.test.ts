@@ -133,7 +133,7 @@ describe('SubtitleController live captions', () => {
     vi.useRealTimers();
   });
 
-  it('clears stale Chinese immediately and translates after 200 ms of stability', async () => {
+  it('translates promptly and refines as the caption grows (no stability wait)', async () => {
     vi.useFakeTimers();
     const requests: string[] = [];
     const harness = liveHarness(async ([text]) => {
@@ -142,24 +142,33 @@ describe('SubtitleController live captions', () => {
     });
     await harness.controller.attach('https://example.com/video');
 
-    harness.emit({ text: 'First sentence' });
-    await vi.advanceTimersByTimeAsync(200);
+    harness.emit({ text: 'I am thrilled' });
+    await vi.advanceTimersByTimeAsync(120);
     expect(latest(harness.states)).toMatchObject({
-      original: 'First sentence',
-      translation: '译：First sentence',
+      original: 'I am thrilled',
+      translation: '译：I am thrilled',
       translating: false,
     });
 
+    // Growing caption: the partial translation stays visible, then refines —
+    // it must NOT wait for the caption to stop changing.
+    harness.emit({ text: 'I am thrilled we get to' });
+    expect(latest(harness.states)).toMatchObject({
+      original: 'I am thrilled we get to',
+      translation: '译：I am thrilled',
+    });
+    await vi.advanceTimersByTimeAsync(120);
+    expect(latest(harness.states).translation).toBe('译：I am thrilled we get to');
+
+    // A brand-new sentence drops the stale translation immediately.
     harness.emit({ text: 'Second sentence' });
     expect(latest(harness.states)).toMatchObject({
       original: 'Second sentence',
       translation: '',
       translating: true,
     });
-    await vi.advanceTimersByTimeAsync(199);
-    expect(requests).toEqual(['First sentence']);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(requests).toEqual(['First sentence', 'Second sentence']);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(requests).toEqual(['I am thrilled', 'I am thrilled we get to', 'Second sentence']);
   });
 
   it('never applies an out-of-order translation to a newer English caption', async () => {
@@ -174,19 +183,20 @@ describe('SubtitleController live captions', () => {
     await harness.controller.attach('https://example.com/video');
 
     harness.emit({ text: 'First' });
-    await vi.advanceTimersByTimeAsync(200);
-    harness.emit({ text: 'Second' });
-    await vi.advanceTimersByTimeAsync(200);
+    await vi.advanceTimersByTimeAsync(200); // request 1 in flight
+    harness.emit({ text: 'Second' }); // queued behind it
     first.resolve(['旧中文']);
-    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    // The stale result for 'First' must not be applied to 'Second'.
     expect(latest(harness.states)).toMatchObject({
       original: 'Second',
       translation: '',
       translating: true,
     });
 
+    await vi.advanceTimersByTimeAsync(200); // politeness gap → request 2
     second.resolve(['新中文']);
-    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(0);
     expect(latest(harness.states)).toMatchObject({
       original: 'Second',
       translation: '新中文',

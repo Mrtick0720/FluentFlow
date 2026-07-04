@@ -55,9 +55,12 @@ export class SubtitleController {
     tracks: [],
     autoPause: false,
   };
-  private liveTranslateToken = 0;
-  private liveDebounce: ReturnType<typeof setTimeout> | undefined;
   private lastLiveText = '';
+  private livePending: { text: string; start: number } | null = null;
+  private liveInflight = false;
+  private liveThrottle: ReturnType<typeof setTimeout> | undefined;
+  private liveSeq = 0;
+  private liveAppliedSeq = 0;
   private liveHistory: SubtitleSegment[] = [];
   private autoPause = false;
 
@@ -105,10 +108,14 @@ export class SubtitleController {
   detach(): void {
     this.cleanup.forEach((fn) => fn());
     this.cleanup = [];
-    clearTimeout(this.liveDebounce);
+    clearTimeout(this.liveThrottle);
+    this.liveThrottle = undefined;
+    this.livePending = null;
     this.lastLiveText = '';
     this.liveHistory = [];
-    this.liveTranslateToken++;
+    // Invalidate any in-flight live translation.
+    this.liveSeq++;
+    this.liveAppliedSeq = this.liveSeq;
     this.adapter = null;
     this.video = null;
     this.tracks = [];
@@ -322,45 +329,76 @@ export class SubtitleController {
   }
 
   /**
-   * Live captions (e.g. YouTube) render word by word. Show the original text
-   * as it grows, but only translate once the caption has been stable for a
-   * moment — and keep the previous translation on screen until the new one
-   * arrives, so the panel doesn't flicker on every word.
+   * Live captions (e.g. YouTube) render word by word, so waiting for the text
+   * to "stabilize" stalls forever during continuous speech. Instead run a
+   * small pipeline: keep at most one translation request in flight and, when
+   * it returns, immediately translate the newest caption. Partial sentences
+   * are translated too — the Chinese refines as the English grows, lagging by
+   * roughly one request round-trip instead of until the speaker pauses.
    */
   private onLiveCaption(caption: CaptionState | null): void {
     const text = caption?.text ?? '';
     if (text === this.lastLiveText) return;
-    const hadText = this.lastLiveText !== '';
+    const prev = this.lastLiveText;
     this.lastLiveText = text;
-    const token = ++this.liveTranslateToken;
-    // Empty gap between cues: keep the last line visible instead of blanking,
-    // and use the gap as the sentence boundary in learning mode.
+
+    // Gap between cues: keep the last line + translation visible (no flicker);
+    // the gap doubles as the sentence boundary in learning mode.
     if (!text) {
-      clearTimeout(this.liveDebounce);
+      this.livePending = null;
       this.setState({ translating: false });
-      if (this.autoPause && hadText) this.video?.pause();
+      if (this.autoPause && prev) this.video?.pause();
       return;
     }
-    this.setState({ original: text, translation: '', translating: true });
-    clearTimeout(this.liveDebounce);
-    this.liveDebounce = setTimeout(
-      () => void this.translateLive(text, caption?.start ?? this.video?.currentTime ?? 0, token),
-      200,
+
+    const isContinuation = prev !== '' && (text.startsWith(prev) || prev.startsWith(text));
+    this.setState(
+      isContinuation
+        ? { original: text } // keep the partial translation while it refines
+        : { original: text, translation: '', translating: true },
     );
+    this.livePending = { text, start: caption?.start ?? this.video?.currentTime ?? 0 };
+    this.schedulePump(this.liveInflight ? 0 : 120);
   }
 
-  private async translateLive(text: string, start: number, token: number): Promise<void> {
+  /** Coalesce a couple of word-ticks, then run the pipeline if it is idle. */
+  private schedulePump(delayMs: number): void {
+    if (this.liveInflight || this.liveThrottle !== undefined) return;
+    this.liveThrottle = setTimeout(() => {
+      this.liveThrottle = undefined;
+      void this.pumpLive();
+    }, delayMs);
+  }
+
+  private async pumpLive(): Promise<void> {
+    if (this.liveInflight || !this.livePending) return;
+    const { text, start } = this.livePending;
+    this.livePending = null;
+    this.liveInflight = true;
+    const seq = ++this.liveSeq;
     try {
       const [translation] = await this.deps.translate([text]);
-      // Only apply if nothing newer superseded this request.
-      if (token === this.liveTranslateToken && this.lastLiveText === text) {
+      // Apply unless a newer result already landed, we detached, or the
+      // caption moved on to an unrelated sentence. A translation of a prefix
+      // of the current caption is still worth showing.
+      const related =
+        this.lastLiveText === text ||
+        this.lastLiveText.startsWith(text) ||
+        text.startsWith(this.lastLiveText);
+      if (seq > this.liveAppliedSeq && related) {
+        this.liveAppliedSeq = seq;
         this.setState({ translation: translation ?? '', translating: false });
       }
-      this.appendLiveHistory(text, translation ?? '', start);
+      if (this.adapter) this.appendLiveHistory(text, translation ?? '', start);
     } catch {
-      if (token === this.liveTranslateToken && this.lastLiveText === text) {
-        this.setState({ translation: '', translating: false });
+      // Keep whatever is shown; the next caption tick retries.
+      if (seq > this.liveAppliedSeq && this.lastLiveText === text) {
+        this.setState({ translating: false });
       }
+    } finally {
+      this.liveInflight = false;
+      // Politeness gap between successive requests while speech continues.
+      if (this.livePending) this.schedulePump(200);
     }
   }
 
