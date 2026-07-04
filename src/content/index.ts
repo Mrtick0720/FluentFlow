@@ -297,6 +297,15 @@ async function main() {
     }
   }
 
+  // An embed that becomes ready after the user already opened subtitles should
+  // catch up. Only our own validated message shape is honoured.
+  window.addEventListener('message', (event) => {
+    if (!isFrameMessage(event.data)) return;
+    if (event.data.type === 'subtitle-frame-ready' && uiStore.get().subtitleVisible) {
+      (event.source as Window | null)?.postMessage(makeFrameCommand('open'), '*');
+    }
+  });
+
   async function toggleSubtitlePanel() {
     if (uiStore.get().subtitleVisible) {
       broadcastSubtitleCommand('close');

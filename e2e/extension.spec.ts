@@ -40,9 +40,56 @@ const FIXTURE_HTML = `<!doctype html>
   <video width="800" height="450" muted></video>
 </body></html>`;
 
+const CAPTIONS_VTT = `WEBVTT
+
+00:00:00.000 --> 01:00:00.000
+English caption
+`;
+
+// Inner frame stands in for an embedded player (e.g. youtube-nocookie): a real
+// video, one English caption source, and a "native" caption element whose
+// opacity mirrors the track's showing state — so hiding the track hides it.
+const EMBED_INNER_HTML = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Embedded player</title>
+<style>
+  html, body { margin: 0; background: #000; }
+  video { width: 640px; height: 360px; background: #111; }
+  .native-caption {
+    position: fixed; left: 50%; bottom: 6%; transform: translateX(-50%);
+    color: #fff; opacity: 1;
+  }
+</style></head>
+<body>
+  <video id="player" width="640" height="360" muted>
+    <track id="cc" kind="captions" srclang="en" label="English" src="/captions.vtt" default>
+  </video>
+  <div class="native-caption"></div>
+  <script>
+    const v = document.getElementById('player');
+    const track = v.textTracks[0];
+    track.mode = 'showing'; // a normal player shows native captions by default
+    const el = document.querySelector('.native-caption');
+    setInterval(() => {
+      el.style.opacity = track.mode === 'showing' ? '1' : '0';
+      const cue = track.activeCues && track.activeCues[0];
+      if (cue) el.textContent = cue.text;
+    }, 100);
+  </script>
+</body></html>`;
+
+const EMBED_OUTER_HTML = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Lesson</title></head>
+<body>
+  <h1>Lesson with an embedded player</h1>
+  <iframe id="embed" src="/embed-inner" width="640" height="360" allow="autoplay"></iframe>
+</body></html>`;
+
 /**
- * One local server plays two roles:
+ * One local server plays several roles:
  *  - GET /            → fixture page the extension translates
+ *  - GET /embed-outer → page hosting an embedded player in an iframe
+ *  - GET /embed-inner → the embedded player frame
+ *  - GET /captions.vtt → English captions for the embedded player
  *  - POST /v1/chat/completions → OpenAI-compatible mock translation endpoint
  *    (CORS-open so the service worker can call it without host permissions)
  */
@@ -69,6 +116,7 @@ function startServer(): Promise<{ server: http.Server; port: number }> {
           'Summer League': '夏季联赛',
           'Weekly edition': '每周版',
           Teams: '球队',
+          'English caption': '中文字幕',
         };
         const content = JSON.stringify({
           translations: texts.map((t) => labels[t] ?? `译文：${t}`),
@@ -78,6 +126,21 @@ function startServer(): Promise<{ server: http.Server; port: number }> {
           JSON.stringify({ choices: [{ message: { role: 'assistant', content } }] }),
         );
       });
+      return;
+    }
+    if (req.url === '/captions.vtt') {
+      res.writeHead(200, { 'Content-Type': 'text/vtt', ...cors });
+      res.end(CAPTIONS_VTT);
+      return;
+    }
+    if (req.url?.startsWith('/embed-inner')) {
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(EMBED_INNER_HTML);
+      return;
+    }
+    if (req.url?.startsWith('/embed-outer')) {
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(EMBED_OUTER_HTML);
       return;
     }
     res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -181,6 +244,53 @@ test('loads the extension and translates a page end-to-end', async () => {
       el.getBoundingClientRect().top,
     );
     expect(logoTopAfter).toBe(logoTopBefore);
+  } finally {
+    await context.close();
+    server.close();
+  }
+});
+
+test('embedded subtitles show two bilingual lines and hide native captions', async () => {
+  const { server, port } = await startServer();
+  const context = await chromium.launchPersistentContext('', {
+    channel: 'chromium',
+    headless: true,
+    args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`],
+  });
+
+  try {
+    const sw = await getServiceWorker(context);
+    await sw.evaluate(async (baseUrl: string) => {
+      await chrome.storage.local.set({
+        'lf-settings': {
+          translationProvider: 'custom',
+          providers: { custom: { baseUrl, model: 'mock' } },
+          cache: { enabled: false, ttlHours: 1 },
+        },
+      });
+    }, `http://127.0.0.1:${port}/v1`);
+
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${port}/embed-outer`);
+    await page.waitForSelector('#lf-host', { state: 'attached' });
+
+    // Open subtitles from the top tab, the way the toolbar/hotkey command does.
+    await sw.evaluate(async () => {
+      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      if (!tab?.id) throw new Error('fixture tab not found');
+      await chrome.tabs.sendMessage(tab.id, {
+        kind: 'lf-tab-request',
+        type: 'content.toggleSubtitle',
+        payload: null,
+      });
+    });
+
+    const frame = page.frameLocator('#embed');
+    await expect(frame.locator('.lf-sub-original')).toHaveText('English caption', { timeout: 15_000 });
+    await expect(frame.locator('.lf-sub-translation')).toHaveText('中文字幕');
+    // The player's native caption line is hidden — only the two LinguaFlow lines show.
+    await expect(frame.locator('.native-caption')).toHaveCSS('opacity', '0');
+    await expect(frame.locator('.lf-sub-original, .lf-sub-translation')).toHaveCount(2);
   } finally {
     await context.close();
     server.close();
