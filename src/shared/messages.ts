@@ -64,6 +64,8 @@ export interface RequestMap {
   'conversations.save': { req: AIConversation; res: AIConversation };
   'conversations.remove': { req: { id: string }; res: null };
   'cache.clear': { req: { scope: 'translation' | 'dictionary' | 'ai' | 'all' }; res: null };
+  /** List model ids from an OpenAI-compatible endpoint's /models. */
+  'models.list': { req: { target: 'translationCustom' | 'ai' }; res: { models: string[] } };
   'permissions.requestOrigin': { req: { origin: string }; res: { granted: boolean } };
   'sidepanel.open': { req: null; res: null };
 }

@@ -10,7 +10,7 @@ import { downloadFile, toCsv } from '@/utils/csv';
 /** Common OpenAI-compatible endpoints; picking one fills base URL + model. */
 const AI_PRESETS = [
   { label: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
-  { label: 'Gemini（OpenAI 兼容）', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.0-flash' },
+  { label: 'Gemini（OpenAI 兼容）', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash' },
   { label: 'Kimi（月之暗面）', baseUrl: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k' },
   { label: '通义千问', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus' },
   { label: '智谱 GLM', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-flash' },
@@ -252,10 +252,10 @@ export function Options() {
               }}
             />
           </Field>
-          <Field label="模型" hint="填 API 模型 ID（小写连字符），非显示名。如 deepseek-chat、gemini-2.0-flash">
-            <SavedInput
+          <Field label="模型" hint="API 模型 ID（小写连字符）。可点「拉取」从端点获取列表">
+            <ModelPicker
               value={settings.providers.custom?.model ?? ''}
-              placeholder="如 gemini-2.0-flash"
+              target="translationCustom"
               onSave={(v) => setProvider('custom', { model: v.trim() })}
             />
           </Field>
@@ -302,12 +302,16 @@ export function Options() {
               <option value="custom">其他模型（OpenAI 兼容端点）</option>
             </Select>
           </Field>
-          <Field label="模型（可选）">
-            <SavedInput
-              value={settings.ai.model ?? ''}
-              placeholder="留空使用默认"
-              onSave={(v) => setAI({ model: v })}
-            />
+          <Field label="模型（可选）" hint={settings.ai.kind === 'custom' ? '可点「拉取」获取列表' : undefined}>
+            {settings.ai.kind === 'custom' ? (
+              <ModelPicker value={settings.ai.model ?? ''} target="ai" onSave={(v) => setAI({ model: v.trim() })} />
+            ) : (
+              <SavedInput
+                value={settings.ai.model ?? ''}
+                placeholder="留空使用默认"
+                onSave={(v) => setAI({ model: v })}
+              />
+            )}
           </Field>
         </div>
         {settings.ai.kind === 'custom' && (
@@ -520,6 +524,64 @@ function EndpointTester({
       </Button>
       {state === 'ok' && <span className="text-xs text-green-600 dark:text-green-400">✓ {msg}</span>}
       {state === 'err' && <span className="max-w-md break-all text-xs text-red-500">✗ {msg}</span>}
+    </div>
+  );
+}
+
+/**
+ * Model field with a "拉取" button that lists the endpoint's available models
+ * (GET /models via the service worker) into a dropdown — so the user picks a
+ * currently-valid id instead of guessing (and hitting model_not_found / "no
+ * longer available"). Save the Base URL and key first.
+ */
+function ModelPicker({
+  value,
+  target,
+  onSave,
+}: {
+  value: string;
+  target: 'translationCustom' | 'ai';
+  onSave: (value: string) => void;
+}) {
+  const [models, setModels] = useState<string[] | null>(null);
+  const [status, setStatus] = useState<'idle' | 'loading' | 'err'>('idle');
+  const [err, setErr] = useState('');
+  return (
+    <div className="space-y-1">
+      <div className="flex gap-2">
+        <SavedInput value={value} placeholder="如 gemini-2.5-flash" onSave={(v) => onSave(v.trim())} />
+        <Button
+          disabled={status === 'loading'}
+          onClick={async () => {
+            setStatus('loading');
+            setErr('');
+            try {
+              const { models: list } = await sendRequest('models.list', { target });
+              setModels(list);
+              setStatus('idle');
+            } catch (e) {
+              setErr(e instanceof Error ? e.message : String(e));
+              setStatus('err');
+            }
+          }}
+        >
+          {status === 'loading' ? '…' : '拉取'}
+        </Button>
+      </div>
+      {models && models.length > 0 && (
+        <Select className="w-full" value={value} onChange={(e) => onSave(e.target.value)}>
+          <option value="">选择模型…（{models.length} 个）</option>
+          {models.map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+        </Select>
+      )}
+      {models && models.length === 0 && (
+        <span className="text-xs text-slate-400">该端点未返回模型列表，请手动填写</span>
+      )}
+      {status === 'err' && <span className="block max-w-md break-all text-xs text-red-500">✗ {err}</span>}
     </div>
   );
 }

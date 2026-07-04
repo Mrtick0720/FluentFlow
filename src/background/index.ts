@@ -10,9 +10,11 @@ import {
   VocabularyRepository,
 } from '@/services/storage/repositories';
 import {
+  getSettings,
   getSettingsRedacted,
   updateSettings,
 } from '@/services/storage/settingsStore';
+import { fetchModelIds } from '@/services/ai/models';
 import { createDefaultRegistry } from '@/services/translation/registry';
 import { TranslationService } from '@/services/translation/service';
 import {
@@ -80,6 +82,15 @@ const router = new MessageRouter()
   .on('conversations.remove', async ({ id }) => {
     await conversations.remove(id);
     return null;
+  })
+  .on('models.list', async ({ target }) => {
+    const settings = await getSettings(); // real keys, service-worker only
+    const { baseUrl, apiKey } =
+      target === 'ai'
+        ? { baseUrl: settings.ai.baseUrl, apiKey: settings.ai.apiKey }
+        : { baseUrl: settings.providers.custom?.baseUrl, apiKey: settings.providers.custom?.apiKey };
+    if (!baseUrl) throw new Error('未设置 Base URL');
+    return { models: await fetchModelIds(baseUrl, apiKey) };
   })
   .on('cache.clear', async ({ scope }) => {
     await cacheClear(scope === 'all' ? 'all' : scope);
