@@ -72,11 +72,16 @@ export function Popup() {
   const [pageActive, setPageActive] = useState(false);
   const [stats, setStats] = useState<StatsSnapshot>();
   const [busy, setBusy] = useState(false);
+  const [translateKey, setTranslateKey] = useState('');
   const version = chrome.runtime.getManifest().version;
 
   useEffect(() => {
     void activeTabHost().then(setHost);
     void sendRequest('stats.get', null).then(setStats, () => {});
+    // Read the real, user-assigned shortcut instead of hardcoding it.
+    chrome.commands.getAll().then((cmds) => {
+      setTranslateKey(cmds.find((c) => c.name === 'toggle-translation')?.shortcut ?? '');
+    }, () => {});
   }, []);
 
   if (!settings) {
@@ -192,7 +197,9 @@ export function Popup() {
           onClick={toggleTranslate}
           disabled={busy}
         >
-          {busy ? '处理中…' : pageActive ? '还原此页（Alt+T）' : '翻译此页（Alt+T）'}
+          {busy
+            ? '处理中…'
+            : `${pageActive ? '还原页面' : '沉浸翻译'}${translateKey ? `（${translateKey}）` : ''}`}
         </Button>
 
         <SegmentedControl options={MODES} value={settings.displayMode} onChange={(m) => void setMode(m)} />

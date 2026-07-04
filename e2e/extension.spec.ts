@@ -136,7 +136,7 @@ test('popup renders quick controls', async () => {
     const page = await context.newPage();
     await page.goto(`chrome-extension://${extensionId}/popup.html`);
     await expect(page.getByText('LinguaFlow')).toBeVisible();
-    await expect(page.getByRole('button', { name: /翻译此页/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /沉浸翻译/ })).toBeVisible();
     await expect(page.getByRole('radio', { name: '双语' })).toBeVisible();
   } finally {
     await context.close();
