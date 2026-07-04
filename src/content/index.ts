@@ -24,9 +24,19 @@ import { PageTranslator } from './pageTranslator';
 import { injectYouTubePlayerButton } from './youtubeButton';
 import { App, type UIActions } from './ui/App';
 import { showToast, uiStore } from './ui/store';
+import {
+  isFrameMessage,
+  makeFrameCommand,
+  shouldStartSubtitleFrame,
+  type SubtitleFrameCommand,
+} from './frameBridge';
+import { createSubtitleRuntime } from './subtitleRuntime';
 
-if (window.top === window && document.contentType === 'text/html') {
-  void main();
+if (document.contentType === 'text/html') {
+  // Top frame runs the full app; child frames (embedded players such as
+  // YouTube in Khan Academy) run only the two-line subtitle runtime.
+  if (window.top === window) void main();
+  else void startChildSubtitleRuntime();
 }
 
 async function main() {
@@ -279,8 +289,17 @@ async function main() {
     measure();
   }
 
+  // Forward the subtitle command to embedded player frames so their two-line
+  // runtime toggles in lock-step. Only the command crosses the boundary.
+  function broadcastSubtitleCommand(command: SubtitleFrameCommand) {
+    for (const frame of document.querySelectorAll('iframe')) {
+      frame.contentWindow?.postMessage(makeFrameCommand(command), '*');
+    }
+  }
+
   async function toggleSubtitlePanel() {
     if (uiStore.get().subtitleVisible) {
+      broadcastSubtitleCommand('close');
       subtitleController.detach();
       uiStore.set({
         subtitleVisible: false,
@@ -289,6 +308,7 @@ async function main() {
       });
       return;
     }
+    broadcastSubtitleCommand('open');
     uiStore.set({ subtitleVisible: true });
     const state = await subtitleController.attach(location.href);
     if (state.status === 'ready' && !videoWatchedRecorded) {
@@ -774,6 +794,67 @@ async function main() {
   ) {
     togglePage();
   }
+}
+
+/**
+ * Runs in a child frame that hosts an embedded player. It shows only the
+ * two LinguaFlow lines, listens for commands from the parent, and reports
+ * status back. No subtitle text, credentials, or provider settings cross the
+ * frame boundary — the child fetches its own settings and translates locally.
+ */
+async function startChildSubtitleRuntime() {
+  const settings: UserSettings | null = await sendRequest('settings.get', null).catch(() => null);
+  if (!settings) return;
+
+  const isYouTube = /(^|\.)(youtube\.com|youtube-nocookie\.com)$/.test(location.hostname);
+  if (isYouTube) initTimedTextCapture();
+
+  const runtime = createSubtitleRuntime({
+    translate: async (texts) =>
+      (
+        await sendRequest('translation.translate', {
+          texts,
+          from: settings.sourceLanguage,
+          to: settings.targetLanguage,
+        })
+      ).translations,
+    onState: (status, mode) => {
+      window.parent?.postMessage(
+        mode
+          ? { source: 'linguaflow', type: 'subtitle-frame-state', status, mode }
+          : { source: 'linguaflow', type: 'subtitle-frame-state', status },
+        '*',
+      );
+    },
+  });
+
+  // Announce readiness to the parent once this frame actually hosts a player.
+  let announced = false;
+  const announce = () => {
+    if (announced) return;
+    const videos = [...document.querySelectorAll('video')].map((v) => {
+      const r = v.getBoundingClientRect();
+      return { width: r.width, height: r.height };
+    });
+    if (shouldStartSubtitleFrame(window.top === window, videos)) {
+      announced = true;
+      window.parent?.postMessage({ source: 'linguaflow', type: 'subtitle-frame-ready' }, '*');
+    }
+  };
+  announce();
+  const poll = setInterval(announce, 1500);
+  setTimeout(() => clearInterval(poll), 30_000);
+
+  window.addEventListener('message', (event) => {
+    if (event.source !== window.parent || !isFrameMessage(event.data)) return;
+    const msg = event.data;
+    if (msg.type !== 'subtitle-command') return;
+    if (msg.command === 'open') void runtime.open();
+    else if (msg.command === 'close') runtime.close();
+    else void runtime.toggle();
+  });
+
+  window.addEventListener('pagehide', () => runtime.destroy());
 }
 
 function speak(text: string) {

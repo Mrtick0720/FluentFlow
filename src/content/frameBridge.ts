@@ -31,6 +31,17 @@ export const makeFrameState = (status: SubtitleFrameStatus, mode?: 'track' | 'li
   ...(mode ? { mode } : {}),
 });
 
+/**
+ * A child frame runs the subtitle-only runtime when it is not the top frame and
+ * contains a video large enough to be a real player (not an ad pixel or thumb).
+ */
+export function shouldStartSubtitleFrame(
+  isTop: boolean,
+  videos: Array<{ width: number; height: number }>,
+): boolean {
+  return !isTop && videos.some((v) => v.width >= 200 && v.height >= 120);
+}
+
 export function isFrameMessage(value: unknown): value is FrameMessage {
   if (!value || typeof value !== 'object') return false;
   const v = value as Record<string, unknown>;
