@@ -207,8 +207,11 @@ test('loads the extension and translates a page end-to-end', async () => {
       });
     });
 
-    const firstTranslation = page.locator('.lf-trans').first();
-    await expect(firstTranslation).toContainText('译文：', { timeout: 15_000 });
+    // Wait for translation to complete. Nav labels translate in place, so the
+    // DOM-first .lf-trans is a short in-place label — assert on a body "译文：".
+    await expect(page.locator('.lf-trans').filter({ hasText: '译文：' }).first()).toBeVisible({
+      timeout: 15_000,
+    });
     await expect(page.locator('html')).toHaveAttribute('data-lf-mode', 'bilingual');
 
     // Body paragraph stays bilingual: both the original and the translation exist.
@@ -233,12 +236,11 @@ test('loads the extension and translates a page end-to-end', async () => {
     await expect(page.locator('#weekly-link .lf-trans')).toHaveText('每周版');
 
     // In-place labels preserve the host nav's single-line geometry and do not
-    // move the adjacent NBA logo.
-    const summerLines = await page.locator('#summer-label').evaluate((el) => {
-      const range = document.createRange();
-      range.selectNodeContents(el);
-      return range.getClientRects().length;
-    });
+    // move the adjacent NBA logo. Measure the visible translation's line boxes
+    // (the hidden original is display:none and must not be counted).
+    const summerLines = await page
+      .locator('#summer-label .lf-trans')
+      .evaluate((el) => el.getClientRects().length);
     expect(summerLines).toBe(1);
     const logoTopAfter = await page.locator('#nba-logo').evaluate((el) =>
       el.getBoundingClientRect().top,
