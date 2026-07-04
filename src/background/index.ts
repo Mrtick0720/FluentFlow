@@ -34,6 +34,72 @@ const conversations = new ConversationRepository();
 const reviews = new ReviewHistoryRepository();
 const stats = new StatsRepository();
 
+const DEFAULT_ICON = {
+  16: 'icons/icon16.png',
+  32: 'icons/icon32.png',
+  48: 'icons/icon48.png',
+  128: 'icons/icon128.png',
+} as const;
+
+let baseIconBitmap: ImageBitmap | null = null;
+
+/**
+ * Overlay a small green rounded square with a white check on the toolbar icon
+ * while a tab is being translated; restore the default icon otherwise.
+ */
+async function setTranslatingIcon(tabId: number, active: boolean): Promise<void> {
+  try {
+    if (!active) {
+      await chrome.action.setIcon({ tabId, path: DEFAULT_ICON });
+      return;
+    }
+    const size = 48;
+    baseIconBitmap ??= await createImageBitmap(
+      await (await fetch(chrome.runtime.getURL('icons/icon128.png'))).blob(),
+    );
+    const canvas = new OffscreenCanvas(size, size);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(baseIconBitmap, 0, 0, size, size);
+
+    // Small badge in the bottom-right corner.
+    const b = 22;
+    const x = size - b - 1;
+    const y = size - b - 1;
+    const roundRect = (rx: number, ry: number, rw: number, rh: number, r: number) => {
+      ctx.beginPath();
+      ctx.moveTo(rx + r, ry);
+      ctx.arcTo(rx + rw, ry, rx + rw, ry + rh, r);
+      ctx.arcTo(rx + rw, ry + rh, rx, ry + rh, r);
+      ctx.arcTo(rx, ry + rh, rx, ry, r);
+      ctx.arcTo(rx, ry, rx + rw, ry, r);
+      ctx.closePath();
+    };
+    // White ring for separation, then the green square.
+    roundRect(x - 1.5, y - 1.5, b + 3, b + 3, 7);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    roundRect(x, y, b, b, 6);
+    ctx.fillStyle = '#22c55e';
+    ctx.fill();
+    // White check.
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x + b * 0.27, y + b * 0.52);
+    ctx.lineTo(x + b * 0.44, y + b * 0.68);
+    ctx.lineTo(x + b * 0.74, y + b * 0.33);
+    ctx.stroke();
+
+    const imageData = ctx.getImageData(0, 0, size, size);
+    await chrome.action.setIcon({ tabId, imageData });
+  } catch {
+    // tab closed / offscreen canvas unavailable
+  }
+}
+
 const router = new MessageRouter()
   .on('translation.translate', (req) => translationService.translate(req))
   .on('dictionary.lookup', ({ word, context }) => dictionaryService.lookup(word, context))
@@ -111,15 +177,7 @@ const router = new MessageRouter()
   })
   .on('action.setBadge', async ({ active }, sender) => {
     const tabId = sender.tab?.id;
-    if (tabId === undefined) return null;
-    try {
-      await chrome.action.setBadgeText({ tabId, text: active ? '✓' : '' });
-      if (active) {
-        await chrome.action.setBadgeBackgroundColor({ tabId, color: '#22c55e' });
-      }
-    } catch {
-      // tab closed
-    }
+    if (tabId !== undefined) await setTranslatingIcon(tabId, active);
     return null;
   });
 
