@@ -49,8 +49,10 @@ export interface UserSettings {
   hotkeysEnabled: boolean;
   /** Show the selection toolbar (划词翻译) when text is selected. */
   selectionEnabled: boolean;
-  /** Auto-open the bilingual subtitle panel when a video site is opened. */
+  /** Auto-open the bilingual subtitle panel on ANY video site. */
   autoSubtitleVideoSites: boolean;
+  /** Hostnames where the bilingual subtitle panel auto-opens on video pages. */
+  autoSubtitleSites: string[];
   autoTranslateSites: string[]; // hostnames
   neverTranslateSites: string[]; // hostnames
   privacy: {
@@ -83,6 +85,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   hotkeysEnabled: true,
   selectionEnabled: true,
   autoSubtitleVideoSites: false,
+  autoSubtitleSites: [],
   autoTranslateSites: [],
   neverTranslateSites: [],
   privacy: { cloudSync: false },

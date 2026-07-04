@@ -85,6 +85,7 @@ export function Popup() {
 
   const always = host ? settings.autoTranslateSites.includes(host) : false;
   const never = host ? settings.neverTranslateSites.includes(host) : false;
+  const autoSub = host ? settings.autoSubtitleSites.includes(host) : false;
   const customModel = settings.providers.custom?.model?.trim();
   // For the custom endpoint, show the chosen model id instead of a generic label.
   const providerLabel = (p: (typeof PROVIDERS)[number]) =>
@@ -114,7 +115,10 @@ export function Popup() {
     }
   }
 
-  async function toggleSiteRule(list: 'autoTranslateSites' | 'neverTranslateSites', on: boolean) {
+  async function toggleSiteRule(
+    list: 'autoTranslateSites' | 'neverTranslateSites' | 'autoSubtitleSites',
+    on: boolean,
+  ) {
     if (!host || !settings) return;
     const current = new Set(settings[list]);
     if (on) current.add(host);
@@ -212,6 +216,13 @@ export function Popup() {
               label="总是翻译此网站"
             />
           )}
+          {host && (
+            <Switch
+              checked={autoSub}
+              onChange={(v) => void toggleSiteRule('autoSubtitleSites', v)}
+              label="本站视频默认开双语字幕"
+            />
+          )}
           <Switch
             checked={settings.selectionEnabled}
             onChange={(v) => void update({ selectionEnabled: v })}
@@ -220,7 +231,7 @@ export function Popup() {
           <Switch
             checked={settings.autoSubtitleVideoSites}
             onChange={(v) => void update({ autoSubtitleVideoSites: v })}
-            label="进入视频网站自动开双语字幕"
+            label="所有视频网站都自动开双语字幕"
           />
           {host && (
             <Switch

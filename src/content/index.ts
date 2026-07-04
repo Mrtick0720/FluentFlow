@@ -107,8 +107,10 @@ async function main() {
     if (isVideoPage() && findMainVideo()) {
       uiStore.set({ videoDetected: true });
       startVideoLayoutSync(); // pin the floating buttons to the video
-      // Auto-open the bilingual subtitle panel on video sites, if enabled.
-      if (settings.autoSubtitleVideoSites && !autoSubtitleDone && !uiStore.get().subtitleVisible) {
+      // Auto-open the bilingual subtitle panel: globally, or on this site.
+      const autoSubtitle =
+        settings.autoSubtitleVideoSites || settings.autoSubtitleSites.includes(location.hostname);
+      if (autoSubtitle && !autoSubtitleDone && !uiStore.get().subtitleVisible) {
         autoSubtitleDone = true;
         void toggleSubtitlePanel();
       }
