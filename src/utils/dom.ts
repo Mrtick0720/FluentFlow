@@ -166,6 +166,64 @@ export function introducesUnsafeLayout(before: LayoutSnapshot, after: LayoutSnap
   );
 }
 
+interface Box {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+/** Do two boxes intersect? Touching edges (within a 2px tolerance) don't count. */
+export function rectanglesOverlap(a: Box, b: Box): boolean {
+  const t = 2;
+  return a.left < b.right - t && a.right > b.left + t && a.top < b.bottom - t && a.bottom > b.top + t;
+}
+
+/** Rendered, non-trivial siblings immediately adjacent to `el` (for overlap checks). */
+function nearbyVisibleSiblings(el: HTMLElement): HTMLElement[] {
+  const out: HTMLElement[] = [];
+  for (const sib of [el.previousElementSibling, el.nextElementSibling]) {
+    if (!(sib instanceof HTMLElement)) continue;
+    const r = sib.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2) continue;
+    if (getComputedStyle(sib).visibility === 'hidden') continue;
+    out.push(sib);
+  }
+  return out;
+}
+
+/** Live geometry snapshot: self overflow, clipping-ancestor overflow, sibling overlaps. */
+export function captureLayoutSnapshot(el: HTMLElement, siblings: HTMLElement[]): LayoutSnapshot {
+  const rect = el.getBoundingClientRect();
+  return {
+    selfOverflow: overflows(el),
+    clippingOverflow: clippingAncestors(el).map(overflows),
+    siblingOverlaps: siblings.map((sibling) => rectanglesOverlap(rect, sibling.getBoundingClientRect())),
+  };
+}
+
+/** The clipping ancestors and siblings a guard must reuse for before/after comparison. */
+export function layoutGuardTargets(el: HTMLElement): {
+  clips: HTMLElement[];
+  siblings: HTMLElement[];
+} {
+  return { clips: clippingAncestors(el), siblings: nearbyVisibleSiblings(el) };
+}
+
+/** Snapshot given a fixed set of clipping ancestors + siblings (order preserved). */
+export function snapshotWithTargets(
+  el: HTMLElement,
+  clips: HTMLElement[],
+  siblings: HTMLElement[],
+): LayoutSnapshot {
+  const rect = el.getBoundingClientRect();
+  return {
+    selfOverflow: overflows(el),
+    clippingOverflow: clips.map(overflows),
+    siblingOverlaps: siblings.map((sibling) => rectanglesOverlap(rect, sibling.getBoundingClientRect())),
+  };
+}
+
 /**
  * Layout-sensitive elements (navigation, controls, short labels, absolutely
  * positioned bits) should be translated in place (original hidden, no added
@@ -173,19 +231,32 @@ export function introducesUnsafeLayout(before: LayoutSnapshot, after: LayoutSnap
  * there breaks tight layouts (nav bars, cards, carousels). Article paragraphs
  * return false and keep the bilingual layout.
  */
+const REPLACE_ROLE_SELECTOR =
+  'nav,header,footer,[role="navigation"],[role="tablist"],[role="menubar"],[role="menu"],' +
+  'button,[role="button"],[role="tab"],[role="menuitem"],th,' +
+  '[class*="hero" i],[class*="banner" i],[class*="carousel" i],[class*="slider" i],' +
+  '[class*="slide" i],[class*="card" i]';
+
 export function shouldReplaceInPlace(el: HTMLElement): boolean {
-  if (
-    el.closest(
-      'nav,header,footer,[role="navigation"],[role="tablist"],[role="menubar"],[role="menu"],' +
-        'button,[role="button"],[role="tab"],[role="menuitem"],th',
-    )
-  ) {
-    return true;
-  }
+  // Navigation, controls, and hero/banner/carousel/card regions.
+  if (el.closest(REPLACE_ROLE_SELECTOR)) return true;
+
   const text = (el.textContent ?? '').trim();
   if (text.length <= 20) return true; // short UI labels
+
   const cs = getComputedStyle(el);
   if (cs.position === 'absolute' || cs.position === 'fixed') return true;
+
+  // A positioned ancestor (a stacking context) usually means a compact,
+  // layout-sensitive widget rather than a flowing article paragraph.
+  let node = el.parentElement;
+  for (let depth = 0; node && depth < 4; depth++) {
+    const ps = getComputedStyle(node);
+    if (ps.position === 'absolute' || ps.position === 'fixed' || ps.position === 'sticky') {
+      return true;
+    }
+    node = node.parentElement;
+  }
   return false;
 }
 
