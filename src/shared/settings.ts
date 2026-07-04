@@ -19,6 +19,19 @@ export interface ProviderSettings {
   model?: string;
 }
 
+/** A named, user-saved OpenAI-compatible endpoint (DeepSeek, Gemini, GLM, …). */
+export interface CustomEndpoint {
+  id: string;
+  name: string;
+  baseUrl?: string;
+  model?: string;
+  /** Stored obfuscated (AES-GCM); see utils/crypto. */
+  apiKey?: string;
+}
+
+/** Either a built-in provider, or a saved custom endpoint by id. */
+export type ProviderSelection = TranslationProviderId | `custom:${string}`;
+
 export interface AISettings {
   kind: 'openai' | 'anthropic' | 'custom' | 'none';
   apiKey?: string;
@@ -39,8 +52,10 @@ export interface UserSettings {
   targetLanguage: LanguageCode;
   sourceLanguage: LanguageCode; // 'auto' to detect
   displayMode: DisplayMode;
-  translationProvider: TranslationProviderId;
+  translationProvider: ProviderSelection;
   providers: Partial<Record<TranslationProviderId, ProviderSettings>>;
+  /** Saved custom endpoints, each selectable as `custom:<id>`. */
+  customEndpoints: CustomEndpoint[];
   ai: AISettings;
   theme: 'system' | 'light' | 'dark';
   fontScale: number; // multiplier for injected translation text
@@ -73,6 +88,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   displayMode: 'bilingual',
   translationProvider: 'google',
   providers: {},
+  customEndpoints: [],
   ai: { kind: 'none' },
   theme: 'system',
   fontScale: 0.92,
@@ -103,7 +119,31 @@ export function migrateSettings(stored: unknown): UserSettings {
     stored as Record<string, unknown>,
   ) as unknown as UserSettings;
   merged.schemaVersion = SETTINGS_SCHEMA_VERSION;
+  migrateLegacyCustom(merged);
   return merged;
+}
+
+/**
+ * Fold a legacy single `providers.custom` slot into the named endpoint list so
+ * older installs keep working (keys are still sealed at this point — moving the
+ * string preserves them).
+ */
+function migrateLegacyCustom(s: UserSettings): void {
+  if (!Array.isArray(s.customEndpoints)) s.customEndpoints = [];
+  const legacy = s.providers.custom;
+  if (!legacy || (!legacy.baseUrl && !legacy.model && !legacy.apiKey)) return;
+  const id = 'default';
+  if (!s.customEndpoints.some((e) => e.id === id)) {
+    s.customEndpoints.unshift({
+      id,
+      name: '自定义端点',
+      baseUrl: legacy.baseUrl,
+      model: legacy.model,
+      apiKey: legacy.apiKey,
+    });
+  }
+  delete s.providers.custom;
+  if (s.translationProvider === 'custom') s.translationProvider = `custom:${id}`;
 }
 
 function deepMerge(base: Record<string, unknown>, patch: Record<string, unknown>) {

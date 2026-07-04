@@ -27,6 +27,47 @@ describe('migrateSettings', () => {
   });
 });
 
+describe('custom endpoints', () => {
+  it('defaults to an empty list', () => {
+    expect(migrateSettings(undefined).customEndpoints).toEqual([]);
+  });
+
+  it('migrates a legacy single custom provider into a named endpoint', () => {
+    const migrated = migrateSettings({
+      translationProvider: 'custom',
+      providers: {
+        custom: { baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat', apiKey: 'enc:v1:x' },
+      },
+    });
+    expect(migrated.customEndpoints).toHaveLength(1);
+    const ep = migrated.customEndpoints[0]!;
+    expect(ep.baseUrl).toBe('https://api.deepseek.com/v1');
+    expect(ep.model).toBe('deepseek-chat');
+    expect(ep.apiKey).toBe('enc:v1:x');
+    expect(migrated.translationProvider).toBe(`custom:${ep.id}`);
+    expect(migrated.providers.custom).toBeUndefined();
+  });
+
+  it('seals, redacts, and preserves each endpoint key by id', async () => {
+    const saved = await updateSettings({
+      customEndpoints: [
+        { id: 'a', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat', apiKey: 'sk-secret' },
+      ],
+    });
+    expect(saved.customEndpoints[0]!.apiKey).toBe('sk-secret');
+
+    const redacted = await getSettingsRedacted();
+    expect(redacted.customEndpoints[0]!.apiKey).toBe(REDACTED_KEY);
+
+    // Re-saving with the redaction sentinel must keep the stored key.
+    await updateSettings({
+      customEndpoints: [{ id: 'a', name: 'DeepSeek', baseUrl: 'x', model: 'y', apiKey: REDACTED_KEY }],
+    });
+    const full = await getSettings();
+    expect(full.customEndpoints[0]!.apiKey).toBe('sk-secret');
+  });
+});
+
 describe('crypto seal/open', () => {
   it('round-trips a secret and tolerates plaintext passthrough', async () => {
     const sealed = await sealSecret('sk-test-123');

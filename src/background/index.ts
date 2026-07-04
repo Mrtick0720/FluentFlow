@@ -149,12 +149,15 @@ const router = new MessageRouter()
     await conversations.remove(id);
     return null;
   })
-  .on('models.list', async ({ target }) => {
+  .on('models.list', async ({ target, endpointId }) => {
     const settings = await getSettings(); // real keys, service-worker only
+    const endpoint = endpointId
+      ? settings.customEndpoints.find((e) => e.id === endpointId)
+      : undefined;
     const { baseUrl, apiKey } =
       target === 'ai'
         ? { baseUrl: settings.ai.baseUrl, apiKey: settings.ai.apiKey }
-        : { baseUrl: settings.providers.custom?.baseUrl, apiKey: settings.providers.custom?.apiKey };
+        : { baseUrl: endpoint?.baseUrl, apiKey: endpoint?.apiKey };
     if (!baseUrl) throw new Error('未设置 Base URL');
     return { models: await fetchModelIds(baseUrl, apiKey) };
   })

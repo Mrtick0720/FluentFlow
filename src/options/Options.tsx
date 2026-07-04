@@ -3,7 +3,7 @@ import { Button, Field, Section, SegmentedControl, Select, Switch, TextInput } f
 import { useSettings, useTheme } from '@/hooks/useSettings';
 import { COMMON_LANGUAGES } from '@/shared/constants';
 import { sendRequest } from '@/shared/messages';
-import { REDACTED_KEY, type UserSettings } from '@/shared/settings';
+import { REDACTED_KEY, type ProviderSelection, type UserSettings } from '@/shared/settings';
 import type { Sentence, TranslationProviderId, Vocabulary } from '@/types/models';
 import { downloadFile, toCsv } from '@/utils/csv';
 
@@ -144,13 +144,17 @@ export function Options() {
             <Select
               className="w-full"
               value={settings.translationProvider}
-              onChange={(e) => void update({ translationProvider: e.target.value as TranslationProviderId })}
+              onChange={(e) => void update({ translationProvider: e.target.value as ProviderSelection })}
             >
               <option value="google">Google（免费，无需密钥）</option>
               <option value="deepl">DeepL</option>
               <option value="openai">OpenAI</option>
               <option value="azure">Azure Translator</option>
-              <option value="custom">自定义端点</option>
+              {settings.customEndpoints.map((ep) => (
+                <option key={ep.id} value={`custom:${ep.id}`}>
+                  {ep.name || ep.model || '自定义端点'}
+                </option>
+              ))}
             </Select>
           </Field>
           <Field label="目标语言">
@@ -228,71 +232,7 @@ export function Options() {
             />
           </Field>
         </div>
-        <Field label="常用端点预设" hint="选择后自动填入 Base URL 和模型，再填对应服务的 API Key">
-          <Select
-            className="w-full"
-            value=""
-            onChange={async (e) => {
-              const preset = AI_PRESETS.find((p) => p.label === e.target.value);
-              if (!preset) return;
-              setProvider('custom', { baseUrl: preset.baseUrl, model: preset.model });
-              const granted = await grantOrigin(preset.baseUrl);
-              flash(granted ? `已填入 ${preset.label} 端点并授权` : `已填入 ${preset.label}（未授权）`);
-            }}
-          >
-            <option value="">选择预设…（DeepSeek、Gemini、Kimi、通义…）</option>
-            {AI_PRESETS.map((p) => (
-              <option key={p.label} value={p.label}>
-                {p.label}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="自定义端点 Base URL" hint="OpenAI 兼容，需带 /v1，如 https://free.v36.cm/v1">
-          <SavedInput
-            value={settings.providers.custom?.baseUrl ?? ''}
-            placeholder="https://…/v1"
-            onSave={async (v) => {
-              setProvider('custom', { baseUrl: v });
-              if (v) flash((await grantOrigin(v)) ? '已保存并授权访问该端点' : '已保存（未授权，可能无法访问）');
-            }}
-          />
-        </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="模型" hint="API 模型 ID（小写连字符）。可点「拉取」从端点获取列表">
-            <ModelPicker
-              value={settings.providers.custom?.model ?? ''}
-              target="translationCustom"
-              onSave={(v) => setProvider('custom', { model: v.trim() })}
-            />
-          </Field>
-          <Field label="Key（可选）">
-            <SecretInput
-              stored={!!settings.providers.custom?.apiKey}
-              onSave={(v) => setProvider('custom', { apiKey: v })}
-            />
-          </Field>
-        </div>
-        {settings.providers.custom?.baseUrl && (
-          <EndpointTester
-            getUrl={() => settings.providers.custom?.baseUrl}
-            run={async () => {
-              const r = await sendRequest('translation.translate', {
-                texts: ['Hello, world.'],
-                from: 'en',
-                to: settings.targetLanguage,
-                provider: 'custom',
-                refresh: true,
-              });
-              return `连接成功：${r.translations[0] || '(空)'}`;
-            }}
-          />
-        )}
-        <p className="text-xs text-slate-400">
-          若要用自定义端点翻译，记得把上方「默认引擎」选为「自定义端点」。Base URL 结尾需带
-          <code className="mx-1 rounded bg-slate-100 px-1 dark:bg-slate-800">/v1</code>
-          （漏填会自动补上）。密钥失焦/回车保存，AES-GCM 本地加密，绝不上传。
-        </p>
+        <CustomEndpointsEditor settings={settings} update={update} flash={flash} />
       </Section>
 
       <Section title="AI 助手">
@@ -540,6 +480,143 @@ function ShortcutsSection() {
 }
 
 /**
+ * Manage the list of saved custom endpoints (DeepSeek, Gemini, GLM, …). Each
+ * keeps its own Base URL / model / key and is selectable as the default engine.
+ */
+function CustomEndpointsEditor({
+  settings,
+  update,
+  flash,
+}: {
+  settings: UserSettings;
+  update: (patch: Partial<UserSettings>) => void;
+  flash: (msg: string) => void;
+}) {
+  const endpoints = settings.customEndpoints;
+  const uid = () =>
+    globalThis.crypto?.randomUUID?.() ?? `ep-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const patch = (id: string, p: Partial<(typeof endpoints)[number]>) =>
+    update({ customEndpoints: endpoints.map((e) => (e.id === id ? { ...e, ...p } : e)) });
+  const add = (ep: (typeof endpoints)[number]) => update({ customEndpoints: [...endpoints, ep] });
+  const remove = (id: string) =>
+    update({
+      customEndpoints: endpoints.filter((e) => e.id !== id),
+      ...(settings.translationProvider === `custom:${id}`
+        ? { translationProvider: 'google' as ProviderSelection }
+        : {}),
+    });
+
+  return (
+    <div className="space-y-3">
+      {endpoints.length === 0 && (
+        <p className="text-xs text-slate-400">
+          还没有自定义端点。用下方「从预设新建」或「新建空白端点」添加。
+        </p>
+      )}
+
+      {endpoints.map((ep) => {
+        const isDefault = settings.translationProvider === `custom:${ep.id}`;
+        return (
+          <div
+            key={ep.id}
+            className={`space-y-2 rounded-xl border p-3 ${
+              isDefault
+                ? 'border-indigo-400 dark:border-indigo-500'
+                : 'border-slate-200 dark:border-slate-700'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <SavedInput
+                  value={ep.name}
+                  placeholder="名称，如 DeepSeek"
+                  onSave={(v) => patch(ep.id, { name: v.trim() || '自定义端点' })}
+                />
+              </div>
+              <Button
+                className="shrink-0"
+                disabled={isDefault}
+                onClick={() => update({ translationProvider: `custom:${ep.id}` as ProviderSelection })}
+              >
+                {isDefault ? '默认 ✓' : '设为默认'}
+              </Button>
+              <Button className="shrink-0" onClick={() => remove(ep.id)}>
+                删除
+              </Button>
+            </div>
+            <Field label="Base URL" hint="OpenAI 兼容，需带 /v1（漏填自动补上）">
+              <SavedInput
+                value={ep.baseUrl ?? ''}
+                placeholder="https://…/v1"
+                onSave={async (v) => {
+                  patch(ep.id, { baseUrl: v });
+                  if (v) flash((await grantOrigin(v)) ? '已保存并授权访问该端点' : '已保存（未授权）');
+                }}
+              />
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="模型" hint="可点「拉取」从端点获取列表">
+                <ModelPicker
+                  value={ep.model ?? ''}
+                  target="translationCustom"
+                  endpointId={ep.id}
+                  onSave={(v) => patch(ep.id, { model: v.trim() })}
+                />
+              </Field>
+              <Field label="Key（可选）">
+                <SecretInput stored={!!ep.apiKey} onSave={(v) => patch(ep.id, { apiKey: v })} />
+              </Field>
+            </div>
+            {ep.baseUrl && (
+              <EndpointTester
+                getUrl={() => ep.baseUrl}
+                run={async () => {
+                  const r = await sendRequest('translation.translate', {
+                    texts: ['Hello, world.'],
+                    from: 'en',
+                    to: settings.targetLanguage,
+                    provider: `custom:${ep.id}`,
+                    refresh: true,
+                  });
+                  return `连接成功：${r.translations[0] || '(空)'}`;
+                }}
+              />
+            )}
+          </div>
+        );
+      })}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Select
+          className="min-w-[220px]"
+          value=""
+          onChange={async (e) => {
+            const preset = AI_PRESETS.find((p) => p.label === e.target.value);
+            if (!preset) return;
+            add({ id: uid(), name: preset.label.replace(/（.*?）/, ''), baseUrl: preset.baseUrl, model: preset.model });
+            const granted = await grantOrigin(preset.baseUrl);
+            flash(granted ? `已添加 ${preset.label} 并授权` : `已添加 ${preset.label}（未授权）`);
+          }}
+        >
+          <option value="">从预设新建…（DeepSeek、Gemini、Kimi、通义、GLM…）</option>
+          {AI_PRESETS.map((p) => (
+            <option key={p.label} value={p.label}>
+              {p.label}
+            </option>
+          ))}
+        </Select>
+        <Button onClick={() => add({ id: uid(), name: '自定义端点', baseUrl: '', model: '' })}>
+          新建空白端点
+        </Button>
+      </div>
+      <p className="text-xs text-slate-400">
+        每个端点各自保存 Base URL / 模型 / 密钥（AES-GCM 本地加密，绝不上传）。点「设为默认」即用该端点翻译，也可在上方「默认引擎」或工具栏弹窗里随时切换。
+      </p>
+    </div>
+  );
+}
+
+/**
  * Runs a live round-trip against a configured endpoint and shows the real
  * result or error, so a misconfigured URL / key / model stops failing
  * silently. Requests the origin permission first (button click is a user
@@ -589,10 +666,12 @@ function EndpointTester({
 function ModelPicker({
   value,
   target,
+  endpointId,
   onSave,
 }: {
   value: string;
   target: 'translationCustom' | 'ai';
+  endpointId?: string;
   onSave: (value: string) => void;
 }) {
   const [models, setModels] = useState<string[] | null>(null);
@@ -611,7 +690,7 @@ function ModelPicker({
             setStatus('loading');
             setErr('');
             try {
-              const { models: list } = await sendRequest('models.list', { target });
+              const { models: list } = await sendRequest('models.list', { target, endpointId });
               setModels(list);
               setStatus('idle');
             } catch (e) {

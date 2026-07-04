@@ -13,6 +13,9 @@ async function mapSecrets(
   for (const provider of Object.values(out.providers)) {
     if (provider.apiKey) provider.apiKey = await fn(provider.apiKey);
   }
+  for (const endpoint of out.customEndpoints ?? []) {
+    if (endpoint.apiKey) endpoint.apiKey = await fn(endpoint.apiKey);
+  }
   if (out.ai.apiKey) out.ai.apiKey = await fn(out.ai.apiKey);
   return out;
 }
@@ -37,6 +40,11 @@ export async function updateSettings(patch: Partial<UserSettings>): Promise<User
   for (const [id, provider] of Object.entries(merged.providers)) {
     if (provider.apiKey === REDACTED_KEY) {
       provider.apiKey = current.providers[id as keyof typeof current.providers]?.apiKey;
+    }
+  }
+  for (const endpoint of merged.customEndpoints ?? []) {
+    if (endpoint.apiKey === REDACTED_KEY) {
+      endpoint.apiKey = current.customEndpoints.find((e) => e.id === endpoint.id)?.apiKey;
     }
   }
   if (merged.ai.apiKey === REDACTED_KEY) merged.ai.apiKey = current.ai.apiKey;

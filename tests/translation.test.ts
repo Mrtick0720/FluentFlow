@@ -163,4 +163,24 @@ describe('TranslationService', () => {
     await service.translate({ texts: ['hi'], from: 'auto', to: 'zh-CN', refresh: true });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  it('routes custom:<id> to the selected saved endpoint config', async () => {
+    await updateSettings({
+      translationProvider: 'custom:a',
+      customEndpoints: [
+        { id: 'a', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat', apiKey: 'sk-a' },
+      ],
+    });
+    fetchMock.mockResolvedValue(
+      jsonResponse({ choices: [{ message: { content: JSON.stringify({ translations: ['你好'] }) } }] }),
+    );
+    const service = new TranslationService(createDefaultRegistry());
+    const out = await service.translate({ texts: ['hello'], from: 'auto', to: 'zh-CN' });
+
+    expect(out.translations).toEqual(['你好']);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(String(url)).toBe('https://api.deepseek.com/v1/chat/completions');
+    const headers = (init as RequestInit).headers as Record<string, string>;
+    expect(headers['Authorization']).toBe('Bearer sk-a');
+  });
 });

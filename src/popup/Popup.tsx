@@ -4,6 +4,7 @@ import { activeTabHost, activeTabId } from '@/hooks/useActiveTab';
 import { useSettings, useTheme } from '@/hooks/useSettings';
 import { COMMON_LANGUAGES } from '@/shared/constants';
 import { sendRequest, sendToTab } from '@/shared/messages';
+import type { ProviderSelection } from '@/shared/settings';
 import type { DisplayMode, StatsSnapshot, TranslationProviderId } from '@/types/models';
 
 const PROVIDERS: Array<{ value: TranslationProviderId; label: string }> = [
@@ -20,17 +21,17 @@ const PROVIDERS: Array<{ value: TranslationProviderId; label: string }> = [
  * company's logo artwork.
  */
 function brandBadge(
-  provider: TranslationProviderId,
+  provider: ProviderSelection,
   model?: string,
 ): { label: string; bg: string } {
-  if (provider !== 'custom') {
+  if (!provider.startsWith('custom')) {
     return {
       google: { label: 'G', bg: '#4285F4' },
       deepl: { label: 'D', bg: '#0F2B46' },
       openai: { label: '◍', bg: '#10A37F' },
       azure: { label: 'Az', bg: '#0078D4' },
       custom: { label: '⚙', bg: '#64748B' },
-    }[provider];
+    }[provider as TranslationProviderId];
   }
   const m = (model ?? '').toLowerCase();
   if (m.includes('gemini')) return { label: '✦', bg: '#1A73E8' };
@@ -91,11 +92,19 @@ export function Popup() {
   const always = host ? settings.autoTranslateSites.includes(host) : false;
   const never = host ? settings.neverTranslateSites.includes(host) : false;
   const autoSub = host ? settings.autoSubtitleSites.includes(host) : false;
-  const customModel = settings.providers.custom?.model?.trim();
-  // For the custom endpoint, show the chosen model id instead of a generic label.
-  const providerLabel = (p: (typeof PROVIDERS)[number]) =>
-    p.value === 'custom' && customModel ? customModel : p.label;
-  const activeBadge = brandBadge(settings.translationProvider, customModel);
+  // Built-in engines plus every saved custom endpoint as its own selectable option.
+  const engineOptions: Array<{ value: ProviderSelection; label: string; model?: string }> = [
+    ...PROVIDERS.filter((p) => p.value !== 'custom').map((p) => ({ value: p.value, label: p.label })),
+    ...settings.customEndpoints.map((ep) => ({
+      value: `custom:${ep.id}` as ProviderSelection,
+      label: ep.name || ep.model || '自定义端点',
+      model: ep.model,
+    })),
+  ];
+  const activeModel = engineOptions.find(
+    (o) => o.value === settings.translationProvider,
+  )?.model;
+  const activeBadge = brandBadge(settings.translationProvider, activeModel);
 
   async function toggleTranslate() {
     const tabId = await activeTabId();
@@ -175,13 +184,13 @@ export function Popup() {
               className="w-full cursor-pointer appearance-none truncate bg-transparent pr-5 text-sm font-semibold outline-none"
               value={settings.translationProvider}
               onChange={(e) =>
-                void update({ translationProvider: e.target.value as TranslationProviderId })
+                void update({ translationProvider: e.target.value as ProviderSelection })
               }
               aria-label="翻译服务"
             >
-              {PROVIDERS.map((p) => (
-                <option key={p.value} value={p.value}>
-                  {providerLabel(p)}
+              {engineOptions.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
                 </option>
               ))}
             </select>

@@ -1,6 +1,7 @@
 import { cacheGet, cacheSet } from '@/services/cache/ttlCache';
 import { getSettings } from '@/services/storage/settingsStore';
 import { MAX_BATCH_CHARS, MAX_BATCH_SEGMENTS } from '@/shared/constants';
+import type { ProviderSelection, ProviderSettings, UserSettings } from '@/shared/settings';
 import type { LanguageCode, TranslationProviderId } from '@/types/models';
 import { batchBy } from '@/utils/async';
 import { fnv1a64 } from '@/utils/hash';
@@ -10,8 +11,25 @@ export interface TranslateRequest {
   texts: string[];
   from: LanguageCode;
   to: LanguageCode;
-  provider?: TranslationProviderId;
+  provider?: ProviderSelection;
   refresh?: boolean;
+}
+
+/** Resolve a selection to the registry provider id and its endpoint config. */
+export function resolveProvider(
+  selection: ProviderSelection,
+  settings: UserSettings,
+): { implId: TranslationProviderId; config: ProviderSettings } {
+  if (selection.startsWith('custom:')) {
+    const id = selection.slice('custom:'.length);
+    const ep = settings.customEndpoints.find((e) => e.id === id);
+    return {
+      implId: 'custom',
+      config: ep ? { baseUrl: ep.baseUrl, model: ep.model, apiKey: ep.apiKey } : {},
+    };
+  }
+  const implId = selection as TranslationProviderId;
+  return { implId, config: settings.providers[implId] ?? {} };
 }
 
 /**
@@ -26,9 +44,9 @@ export class TranslationService {
     provider: TranslationProviderId;
   }> {
     const settings = await getSettings();
-    const providerId = req.provider ?? settings.translationProvider;
+    const selection = req.provider ?? settings.translationProvider;
+    const { implId: providerId, config } = resolveProvider(selection, settings);
     const provider = this.registry.get(providerId);
-    const config = settings.providers[providerId] ?? {};
     const cacheEnabled = settings.cache.enabled;
     const ttlMs = settings.cache.ttlHours * 3600_000;
 
@@ -37,7 +55,7 @@ export class TranslationService {
 
     for (let i = 0; i < req.texts.length; i++) {
       const text = req.texts[i]!;
-      const key = fnv1a64(`${providerId}|${req.from}|${req.to}|${text}`);
+      const key = fnv1a64(`${selection}|${req.from}|${req.to}|${text}`);
       if (cacheEnabled && !req.refresh) {
         const hit = await cacheGet<string>('translation', key);
         if (hit !== undefined) {
