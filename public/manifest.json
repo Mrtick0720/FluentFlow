@@ -47,6 +47,12 @@
     "https://api.dictionaryapi.dev/*"
   ],
   "optional_host_permissions": ["https://*/*", "http://*/*"],
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/*.png"],
+      "matches": ["http://*/*", "https://*/*"]
+    }
+  ],
   "commands": {
     "toggle-translation": {
       "suggested_key": { "default": "Alt+T" },
