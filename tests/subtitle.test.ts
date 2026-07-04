@@ -227,13 +227,13 @@ describe('SubtitleController live captions (whole-sentence mode)', () => {
     await harness.controller.attach('https://example.com/video');
 
     let text = 'word';
-    while (text.length <= 200) {
+    while (text.length <= 150) {
       text += ' word';
       harness.emit({ text });
     }
     const shown = latest(harness.states).original;
-    expect(shown.length).toBeGreaterThan(100);
-    expect(shown.length).toBeLessThanOrEqual(160);
+    expect(shown.length).toBeGreaterThan(60);
+    expect(shown.length).toBeLessThanOrEqual(100);
   });
 
   it('breaks run-on speech at clause boundaries past the soft cap', async () => {
@@ -246,9 +246,24 @@ describe('SubtitleController live captions (whole-sentence mode)', () => {
       'infrastructure for serving these models, and all our customers do typically';
     harness.emit({ text: runOn });
     const shown = latest(harness.states).original;
-    // Split at the last comma — not held until a period or the hard cap.
-    expect(shown.endsWith('models,')).toBe(true);
-    expect(shown.length).toBeLessThan(130);
+    // Kept to a single readable line even in one burst.
+    expect(shown.length).toBeGreaterThan(60);
+    expect(shown.length).toBeLessThanOrEqual(100);
+  });
+
+  it('prefers a comma inside the split window', async () => {
+    vi.useFakeTimers();
+    const harness = liveHarness(async ([text]) => [`译：${text}`]);
+    await harness.controller.attach('https://example.com/video');
+
+    harness.emit({
+      text:
+        "So first you know it's really important to acknowledge the growing consensus, " +
+        'on open source models for the economy',
+    });
+    const shown = latest(harness.states).original;
+    expect(shown.endsWith('consensus,')).toBe(true);
+    expect(shown.length).toBeLessThanOrEqual(100);
   });
 
   it('clears the panel after a long silence', async () => {

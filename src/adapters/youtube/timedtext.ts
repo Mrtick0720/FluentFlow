@@ -123,8 +123,8 @@ interface Json3Event {
   segs?: Array<{ utf8?: string; tOffsetMs?: number }>;
 }
 
-const MAX_SENTENCE_CHARS = 160;
-const SOFT_SENTENCE_CHARS = 110;
+const MAX_SENTENCE_CHARS = 100;
+const SOFT_SENTENCE_CHARS = 65;
 const SENTENCE_GAP_MS = 2000;
 const SENTENCE_END = /[.!?…]["')\]]?$/;
 const CLAUSE_PUNCT_END = /[,;:，；：]$/;

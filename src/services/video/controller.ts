@@ -65,9 +65,14 @@ export function isRelatedCaption(prev: string, next: string): boolean {
 const CLAUSE_CONJUNCTION =
   /\s+(and|but|so|or|because|which|that|when|while|then|where|although)\s+/gi;
 
+const MIN_SPLIT_CHARS = 24;
+
 /**
- * Where to break a live-caption buffer into a displayable line.
- * Returns null while the buffer should keep growing.
+ * Where to break a live-caption buffer into a displayable line. The goal is
+ * one screen line per language, so chunks are kept short: clause boundaries
+ * are only considered inside the [MIN_SPLIT_CHARS, hardChars] window and the
+ * hard cap always splits at a word boundary. Returns null while the buffer
+ * should keep growing.
  */
 export function findLiveSplit(
   text: string,
@@ -79,23 +84,30 @@ export function findLiveSplit(
   if (sentence) return { completed: sentence[1]!.trim(), rest: sentence[2]!.trim() };
   if (text.length <= softChars) return null;
 
-  // 2) Clause boundary: last comma/semicolon/colon, else last conjunction.
+  // 2) Clause boundary: the latest comma/semicolon/colon or conjunction that
+  //    still keeps the chunk within the hard cap.
   let cut = -1;
-  const punct = text.match(/^([\s\S]*[,;:，；：])\s+\S[\s\S]*$/);
-  if (punct) cut = punct[1]!.length;
-  if (cut < 30) {
+  for (const m of text.matchAll(/[,;:，；：]\s+/g)) {
+    const end = m.index! + 1; // include the punctuation mark
+    if (end >= MIN_SPLIT_CHARS && end <= hardChars) cut = Math.max(cut, end);
+  }
+  if (cut === -1) {
     for (const m of text.matchAll(CLAUSE_CONJUNCTION)) {
-      if (m.index !== undefined && m.index >= 30) cut = Math.max(cut, m.index);
+      if (m.index !== undefined && m.index >= MIN_SPLIT_CHARS && m.index <= hardChars) {
+        cut = Math.max(cut, m.index);
+      }
     }
   }
-  if (cut >= 30 && text.length - cut >= 8) {
+  if (cut !== -1 && text.length - cut >= 8) {
     return { completed: text.slice(0, cut).trim(), rest: text.slice(cut).trim() };
   }
 
   // 3) Hard cap: last word boundary before the limit.
   if (text.length > hardChars) {
     const space = text.lastIndexOf(' ', hardChars);
-    if (space > 40) return { completed: text.slice(0, space).trim(), rest: text.slice(space + 1).trim() };
+    if (space > MIN_SPLIT_CHARS) {
+      return { completed: text.slice(0, space).trim(), rest: text.slice(space + 1).trim() };
+    }
     return { completed: text.trim(), rest: '' };
   }
   return null;
@@ -502,10 +514,10 @@ export class SubtitleController {
     }
   }
 
-  /** Comfortable subtitle length; look for a clause break past this point. */
-  private static readonly LIVE_SOFT_CHARS = 110;
+  /** Comfortable one-line subtitle length; look for a clause break past this. */
+  private static readonly LIVE_SOFT_CHARS = 65;
   /** Hard cap for clause-less streams; split at a word boundary here. */
-  private static readonly LIVE_MAX_BUFFER_CHARS = 160;
+  private static readonly LIVE_MAX_BUFFER_CHARS = 100;
 
   /**
    * Display the finished part of the buffer and keep only the tail:

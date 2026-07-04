@@ -261,11 +261,13 @@
 
 /* ---------- subtitle panel ---------- */
 
+/* Content-sized bar: grows with the sentence, wraps only at max-width. */
 .lf-subtitle-panel {
   position: fixed;
   display: flex;
   flex-direction: column;
   align-items: center;
+  width: max-content;
   min-width: 240px;
   max-width: calc(100vw - 24px);
   color: #fff;
