@@ -156,22 +156,33 @@ async function main() {
     });
   }
 
-  // On YouTube, hover-preview thumbnails in the feed are real <video> elements.
-  // Only treat watch / shorts / embed pages as a video context so the buttons
-  // and subtitle panel don't appear over a list of thumbnails.
+  // Feed/list pages (e.g. YouTube home, search) have hover-preview thumbnails
+  // that are real <video> elements. Only show the video UI on a genuine watch
+  // page. Known sites are gated by URL; unknown sites fall back to a size
+  // heuristic in findMainVideo (a main player is large; a thumbnail is not).
   function isVideoPage(): boolean {
-    if (/(^|\.)youtube\.com$/.test(location.hostname)) {
-      return /^\/(watch|shorts|embed)\b/.test(location.pathname);
+    const host = location.hostname;
+    const path = location.pathname;
+    if (/(^|\.)youtube\.com$/.test(host)) return /^\/(watch|shorts|embed)\b/.test(path);
+    if (/(^|\.)bilibili\.com$/.test(host)) {
+      return /^\/(video|bangumi|cheese|medialist|watchlater|list|festival)\b/.test(path);
     }
     return true;
   }
 
-  // The largest visible <video> on the page — anchors the FAB + subtitle panel.
+  const urlGatedSite = /(^|\.)(youtube|bilibili)\.com$/.test(location.hostname);
+
+  // The main <video> on the page — anchors the FAB + subtitle panel.
   function findMainVideo(): HTMLVideoElement | null {
     if (!isVideoPage()) return null;
+    // Unknown sites: require the player to occupy a meaningful part of the
+    // viewport so feed thumbnails don't qualify.
+    const minMainWidth = Math.min(window.innerWidth * 0.5, 600);
     const videos = [...document.querySelectorAll('video')].filter((v) => {
       const r = v.getBoundingClientRect();
-      return r.width >= 200 && r.height >= 120;
+      if (r.width < 200 || r.height < 120) return false;
+      if (urlGatedSite) return true; // URL already confirms a watch page
+      return r.width >= minMainWidth && r.height >= 170;
     });
     if (videos.length === 0) return null;
     return videos.reduce((best, v) => {
@@ -205,12 +216,20 @@ async function main() {
           observed = video;
         }
         const rect = video?.getBoundingClientRect();
+        const hasVideo = !!rect && rect.width > 0;
         uiStore.set({
-          videoRect:
-            rect && rect.width > 0
-              ? { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
-              : null,
+          videoDetected: hasVideo,
+          videoRect: hasVideo
+            ? { left: rect!.left, top: rect!.top, width: rect!.width, height: rect!.height }
+            : null,
         });
+        // Close a lingering subtitle panel when the main video is gone
+        // (e.g. SPA navigation away from a watch page on any site).
+        if (!hasVideo && uiStore.get().subtitleVisible) {
+          subtitleController.detach();
+          uiStore.set({ subtitleVisible: false, transcript: [], transcriptVisible: false });
+          autoSubtitleDone = false;
+        }
       });
     };
     window.addEventListener('resize', measure);

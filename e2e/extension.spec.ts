@@ -13,9 +13,9 @@ const FIXTURE_HTML = `<!doctype html>
     <p>Reading real articles is one of the best ways to learn a language.</p>
     <p>Subtitles and bilingual text make the process even smoother.</p>
   </article>
-  <!-- A sized video element so the content script's video-layout path runs
+  <!-- A large video element so the content script's main-video path runs
        (regression guard for a startup crash that only triggered with video). -->
-  <video width="320" height="180" muted></video>
+  <video width="800" height="450" muted></video>
 </body></html>`;
 
 /**
