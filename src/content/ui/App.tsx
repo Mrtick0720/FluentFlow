@@ -39,7 +39,6 @@ export interface UIActions {
   immersiveTranslate(): void;
   closeQuickTranslate(): void;
   translateText(text: string, from: string, to: string): Promise<string>;
-  setFabPos(pos: { left: number; top: number }): void;
   saveFabPos(pos: { left: number; top: number }): void;
 }
 
@@ -407,46 +406,56 @@ function PlayerMenu({ ui, actions }: { ui: UIState; actions: UIActions }) {
  */
 function FloatingWidget({ ui, actions }: { ui: UIState; actions: UIActions }) {
   const rootRef = useRef<HTMLDivElement>(null);
-  const drag = useRef<{ sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(
-    null,
-  );
   const suppressClick = useRef(false);
+  const draggingRef = useRef(false);
+  const livePos = useRef<{ left: number; top: number } | null>(null);
 
   // Hide during fullscreen video playback.
   if (ui.videoDetected && ui.isFullscreen) return null;
 
-  const pos = ui.fabPos;
+  // During a drag we position imperatively (no React re-render); if the store
+  // re-renders us mid-drag, use the live position instead of the stale one.
+  const pos = draggingRef.current ? livePos.current : ui.fabPos;
   const style: CSSProperties | undefined = pos
     ? { left: pos.left, top: pos.top, right: 'auto', bottom: 'auto', transform: 'none' }
     : undefined; // CSS default: right edge, vertically centered
 
+  // Press-and-drag moves the widget; a tap passes through to the button.
   const onPointerDown = (e: ReactPointerEvent) => {
-    const rect = rootRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    drag.current = { sx: e.clientX, sy: e.clientY, ox: rect.left, oy: rect.top, moved: false };
-  };
-  const onPointerMove = (e: ReactPointerEvent) => {
-    const d = drag.current;
-    if (!d) return;
-    const dx = e.clientX - d.sx;
-    const dy = e.clientY - d.sy;
-    if (!d.moved && Math.abs(dx) + Math.abs(dy) < 5) return;
-    d.moved = true;
-    rootRef.current?.setPointerCapture(e.pointerId);
-    const w = rootRef.current?.offsetWidth ?? 46;
-    const h = rootRef.current?.offsetHeight ?? 120;
-    actions.setFabPos({
-      left: Math.max(4, Math.min(d.ox + dx, window.innerWidth - w - 4)),
-      top: Math.max(4, Math.min(d.oy + dy, window.innerHeight - h - 4)),
-    });
-  };
-  const onPointerUp = () => {
-    if (drag.current?.moved) {
-      suppressClick.current = true;
-      const rect = rootRef.current?.getBoundingClientRect();
-      if (rect) actions.saveFabPos({ left: rect.left, top: rect.top });
-    }
-    drag.current = null;
+    const el = rootRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const start = { sx: e.clientX, sy: e.clientY, ox: rect.left, oy: rect.top, moved: false };
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+
+    const onMove = (ev: PointerEvent) => {
+      const dx = ev.clientX - start.sx;
+      const dy = ev.clientY - start.sy;
+      if (!start.moved && Math.abs(dx) + Math.abs(dy) < 5) return; // tap threshold
+      start.moved = true;
+      draggingRef.current = true;
+      const left = Math.max(4, Math.min(start.ox + dx, window.innerWidth - w - 4));
+      const top = Math.max(4, Math.min(start.oy + dy, window.innerHeight - h - 4));
+      livePos.current = { left, top };
+      // Move the element directly for a smooth, jank-free drag.
+      el.style.left = `${left}px`;
+      el.style.top = `${top}px`;
+      el.style.right = 'auto';
+      el.style.bottom = 'auto';
+      el.style.transform = 'none';
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      if (start.moved && livePos.current) {
+        suppressClick.current = true; // swallow the click that ends the drag
+        actions.saveFabPos(livePos.current);
+        draggingRef.current = false;
+      }
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
   };
 
   // Ignore the click that ends a drag.
@@ -461,14 +470,7 @@ function FloatingWidget({ ui, actions }: { ui: UIState; actions: UIActions }) {
     };
 
   return (
-    <div
-      className="lf-fab-widget"
-      ref={rootRef}
-      style={style}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-    >
+    <div className="lf-fab-widget" ref={rootRef} style={style} onPointerDown={onPointerDown}>
       {ui.pageActive && ui.progress.total > 0 && ui.progress.done < ui.progress.total && (
         <span className="lf-fab-progress">
           {ui.progress.done}/{ui.progress.total}

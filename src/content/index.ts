@@ -608,7 +608,6 @@ async function main() {
       }
       togglePage();
     },
-    setFabPos: (pos) => uiStore.set({ fabPos: pos }),
     saveFabPos: (pos) => {
       uiStore.set({ fabPos: pos });
       void sendRequest('settings.set', { patch: { fabPos: pos } }).catch(() => {});
