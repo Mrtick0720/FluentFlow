@@ -704,6 +704,14 @@ async function main() {
           selection: window.getSelection()?.toString() || undefined,
         });
         return undefined;
+      case 'content.openQuickTranslate':
+        actions.quickTranslate();
+        respond(null);
+        return undefined;
+      case 'content.toggleSubtitle':
+        void toggleSubtitlePanel();
+        respond(null);
+        return undefined;
     }
   });
 

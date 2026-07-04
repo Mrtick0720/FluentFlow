@@ -56,15 +56,25 @@
   "commands": {
     "toggle-translation": {
       "suggested_key": { "default": "Alt+T" },
-      "description": "Translate / restore the current page"
+      "description": "沉浸翻译（翻译 / 还原整页）"
+    },
+    "open-quick-translate": {
+      "suggested_key": { "default": "Alt+D" },
+      "description": "快捷翻译（打开翻译窗口）"
+    },
+    "toggle-subtitle": {
+      "suggested_key": { "default": "Alt+C" },
+      "description": "双语字幕面板（视频页）"
     },
     "cycle-display-mode": {
       "suggested_key": { "default": "Alt+M" },
-      "description": "Cycle bilingual / translation-only / original"
+      "description": "切换显示模式（双语 / 仅译文 / 仅原文）"
     },
     "translate-selection": {
-      "suggested_key": { "default": "Alt+S" },
-      "description": "Translate the selected text"
+      "description": "翻译选中文本"
+    },
+    "open-side-panel": {
+      "description": "打开学习面板（生词本 · 句子本 · AI）"
     }
   }
 }

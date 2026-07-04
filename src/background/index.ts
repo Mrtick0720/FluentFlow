@@ -180,6 +180,12 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
   try {
     if (command === 'toggle-translation') {
       await sendToTab(tabId, 'content.toggleTranslation', null);
+    } else if (command === 'open-quick-translate') {
+      await sendToTab(tabId, 'content.openQuickTranslate', null);
+    } else if (command === 'toggle-subtitle') {
+      await sendToTab(tabId, 'content.toggleSubtitle', null);
+    } else if (command === 'open-side-panel') {
+      if (tab?.windowId !== undefined) await chrome.sidePanel.open({ windowId: tab.windowId });
     } else if (command === 'translate-selection') {
       await sendToTab(tabId, 'content.translateSelection', null);
     } else if (command === 'cycle-display-mode') {

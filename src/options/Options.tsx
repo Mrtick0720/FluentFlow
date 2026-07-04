@@ -417,11 +417,9 @@ export function Options() {
             />
           </div>
         </div>
-        <p className="text-xs text-slate-400">
-          快捷键：Alt+T 翻译/还原整页 · Alt+M 切换显示模式 · Alt+S 翻译选中文本。可在
-          chrome://extensions/shortcuts 修改。
-        </p>
       </Section>
+
+      <ShortcutsSection />
 
       <Section title="隐私">
         <p className="text-sm text-slate-500 dark:text-slate-400">
@@ -491,6 +489,53 @@ export function Options() {
         />
       </Section>
     </div>
+  );
+}
+
+/**
+ * Keyboard shortcuts for the current features. Chrome only lets the user
+ * rebind extension shortcuts on chrome://extensions/shortcuts, so this lists
+ * the commands with their current keys and links there.
+ */
+function ShortcutsSection() {
+  const [commands, setCommands] = useState<chrome.commands.Command[]>([]);
+
+  useEffect(() => {
+    chrome.commands.getAll().then(setCommands, () => {});
+  }, []);
+
+  // Ignore Chrome's built-in action command; show only our feature commands.
+  const items = commands.filter((c) => c.name && !c.name.startsWith('_'));
+
+  return (
+    <Section title="快捷键">
+      <p className="text-xs text-slate-400">
+        以下是各功能的键盘快捷键。Chrome 只允许在其快捷键设置页修改键位。
+      </p>
+      <div className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-700">
+        {items.map((c) => (
+          <div key={c.name} className="flex items-center justify-between gap-3 px-3 py-2.5">
+            <span className="text-sm">{c.description || c.name}</span>
+            {c.shortcut ? (
+              <kbd className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium dark:border-slate-700 dark:bg-slate-800">
+                {c.shortcut}
+              </kbd>
+            ) : (
+              <span className="text-xs text-slate-400">未设置</span>
+            )}
+          </div>
+        ))}
+        {items.length === 0 && (
+          <div className="px-3 py-2.5 text-xs text-slate-400">加载中…</div>
+        )}
+      </div>
+      <Button
+        variant="primary"
+        onClick={() => chrome.tabs.create({ url: 'chrome://extensions/shortcuts' })}
+      >
+        在 Chrome 中修改快捷键
+      </Button>
+    </Section>
   );
 }
 

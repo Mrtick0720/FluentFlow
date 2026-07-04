@@ -80,6 +80,8 @@ export interface TabRequestMap {
     req: null;
     res: { url: string; title: string; text: string; selection?: string };
   };
+  'content.openQuickTranslate': { req: null; res: null };
+  'content.toggleSubtitle': { req: null; res: null };
 }
 
 export type RequestType = keyof RequestMap;
