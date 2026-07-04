@@ -105,6 +105,30 @@ function isRenderable(el: HTMLElement): boolean {
   return true;
 }
 
+/**
+ * Is this element visually covered by something else (hit-testing)? Catches
+ * stacked carousel slides and mega-menus parked behind the page via z-index,
+ * which checkVisibility can't see. Only judges elements within the viewport;
+ * returns false (don't skip) for off-screen elements.
+ */
+export function isOccluded(el: HTMLElement): boolean {
+  const rect = el.getBoundingClientRect();
+  if (rect.bottom < 0 || rect.top > window.innerHeight) return false; // off-screen: can't judge
+  if (rect.width < 2 || rect.height < 2) return true;
+  const xs = [rect.left + Math.min(12, rect.width * 0.15), rect.left + rect.width / 2];
+  const ys = [rect.top + rect.height * 0.35, rect.top + rect.height * 0.5, rect.top + rect.height * 0.65];
+  let tested = 0;
+  for (const x of xs) {
+    for (const y of ys) {
+      if (x < 1 || y < 1 || x > window.innerWidth - 1 || y > window.innerHeight - 1) continue;
+      tested++;
+      const top = document.elementFromPoint(x, y);
+      if (top && (top === el || el.contains(top))) return false; // owns a point → visible
+    }
+  }
+  return tested > 0; // tested in-viewport points, owned none → covered
+}
+
 /** Heuristic: is this text already (mostly) in the target language? */
 export function looksLikeTargetLanguage(text: string, targetLang: string): boolean {
   if (!targetLang.toLowerCase().startsWith('zh')) return false;

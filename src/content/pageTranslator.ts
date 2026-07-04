@@ -1,7 +1,7 @@
 import { ATTR_TRANSLATED } from '@/shared/constants';
 import type { DisplayMode } from '@/types/models';
 import { debounce } from '@/utils/async';
-import { collectTranslatableBlocks, looksLikeTargetLanguage } from '@/utils/dom';
+import { collectTranslatableBlocks, isOccluded, looksLikeTargetLanguage } from '@/utils/dom';
 
 export interface PageTranslatorOptions {
   translate: (texts: string[]) => Promise<string[]>;
@@ -121,7 +121,11 @@ export class PageTranslator {
     if (!this.active || this.queue.size === 0) return;
     const batch = [...this.queue].slice(0, MAX_PER_FLUSH).filter((el) => {
       this.queue.delete(el);
-      return el.isConnected && !this.inflight.has(el) && !el.hasAttribute(ATTR_TRANSLATED);
+      if (!el.isConnected || this.inflight.has(el) || el.hasAttribute(ATTR_TRANSLATED)) return false;
+      // Skip content covered by an overlay (carousel slides / mega-menus stacked
+      // behind the page via z-index) — translating them causes overlapping mess.
+      if (isOccluded(el)) return false;
+      return true;
     });
     if (batch.length === 0) return;
     batch.forEach((el) => this.inflight.add(el));
