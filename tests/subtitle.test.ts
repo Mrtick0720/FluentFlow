@@ -1,6 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseVtt } from '@/services/subtitle/vtt';
-import { VideoAdapterRegistry, type VideoAdapter } from '@/services/video/adapter';
+import {
+  VideoAdapterRegistry,
+  type CaptionState,
+  type VideoAdapter,
+} from '@/services/video/adapter';
+import { SubtitleController, type SubtitleViewState } from '@/services/video/controller';
 
 const SAMPLE_VTT = `WEBVTT
 
@@ -68,5 +73,138 @@ describe('VideoAdapterRegistry', () => {
       fakeAdapter('youtube', (u) => u.includes('youtube.com')),
     );
     expect(registry.resolve('https://example.com')).toBeNull();
+  });
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+function liveHarness(translate: (texts: string[]) => Promise<string[]>) {
+  let emit: (caption: CaptionState | null) => void = () => {};
+  const video = Object.assign(new EventTarget(), {
+    currentTime: 0,
+    playbackRate: 1,
+    paused: false,
+    pause() {
+      this.paused = true;
+    },
+    play() {
+      this.paused = false;
+      return Promise.resolve();
+    },
+    getBoundingClientRect() {
+      return null;
+    },
+  }) as unknown as HTMLVideoElement;
+  const adapter: VideoAdapter = {
+    id: 'live-test',
+    match: () => true,
+    getVideo: () => video,
+    getSubtitleTracks: async () => [],
+    getCurrentCaption: () => null,
+    seek: () => {},
+    onCaptionChanged: (callback) => {
+      emit = callback;
+      return () => {
+        emit = () => {};
+      };
+    },
+  };
+  const states: SubtitleViewState[] = [];
+  const controller = new SubtitleController(new VideoAdapterRegistry().register(adapter), {
+    translate,
+    onState: (state) => states.push({ ...state }),
+  });
+  return { controller, emit: (caption: CaptionState | null) => emit(caption), states };
+}
+
+const latest = (states: SubtitleViewState[]) => states.at(-1)!;
+
+describe('SubtitleController live captions', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('clears stale Chinese immediately and translates after 200 ms of stability', async () => {
+    vi.useFakeTimers();
+    const requests: string[] = [];
+    const harness = liveHarness(async ([text]) => {
+      requests.push(text!);
+      return [`译：${text}`];
+    });
+    await harness.controller.attach('https://example.com/video');
+
+    harness.emit({ text: 'First sentence' });
+    await vi.advanceTimersByTimeAsync(200);
+    expect(latest(harness.states)).toMatchObject({
+      original: 'First sentence',
+      translation: '译：First sentence',
+      translating: false,
+    });
+
+    harness.emit({ text: 'Second sentence' });
+    expect(latest(harness.states)).toMatchObject({
+      original: 'Second sentence',
+      translation: '',
+      translating: true,
+    });
+    await vi.advanceTimersByTimeAsync(199);
+    expect(requests).toEqual(['First sentence']);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(requests).toEqual(['First sentence', 'Second sentence']);
+  });
+
+  it('never applies an out-of-order translation to a newer English caption', async () => {
+    vi.useFakeTimers();
+    const first = deferred<string[]>();
+    const second = deferred<string[]>();
+    const translate = vi
+      .fn<(texts: string[]) => Promise<string[]>>()
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+    const harness = liveHarness(translate);
+    await harness.controller.attach('https://example.com/video');
+
+    harness.emit({ text: 'First' });
+    await vi.advanceTimersByTimeAsync(200);
+    harness.emit({ text: 'Second' });
+    await vi.advanceTimersByTimeAsync(200);
+    first.resolve(['旧中文']);
+    await Promise.resolve();
+    expect(latest(harness.states)).toMatchObject({
+      original: 'Second',
+      translation: '',
+      translating: true,
+    });
+
+    second.resolve(['新中文']);
+    await Promise.resolve();
+    expect(latest(harness.states)).toMatchObject({
+      original: 'Second',
+      translation: '新中文',
+      translating: false,
+    });
+  });
+
+  it('clears translating after a current request fails', async () => {
+    vi.useFakeTimers();
+    const harness = liveHarness(async () => {
+      throw new Error('offline');
+    });
+    await harness.controller.attach('https://example.com/video');
+    harness.emit({ text: 'Current caption' });
+    await vi.advanceTimersByTimeAsync(200);
+    expect(latest(harness.states)).toMatchObject({
+      original: 'Current caption',
+      translation: '',
+      translating: false,
+    });
   });
 });

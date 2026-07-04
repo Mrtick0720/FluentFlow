@@ -7,6 +7,7 @@ export interface SubtitleViewState {
   mode: 'track' | 'live';
   original: string;
   translation: string;
+  translating: boolean;
   index: number;
   total: number;
   abLoop: { a: number; b: number } | null;
@@ -46,6 +47,7 @@ export class SubtitleController {
     mode: 'track',
     original: '',
     translation: '',
+    translating: false,
     index: -1,
     total: 0,
     abLoop: null,
@@ -117,6 +119,7 @@ export class SubtitleController {
       status: 'idle',
       original: '',
       translation: '',
+      translating: false,
       index: -1,
       total: 0,
       abLoop: null,
@@ -269,7 +272,12 @@ export class SubtitleController {
       this.setState({ original: '', translation: '', index: -1 });
       return;
     }
-    this.setState({ original: segment.text, translation: segment.translation ?? '', index: idx });
+    this.setState({
+      original: segment.text,
+      translation: segment.translation ?? '',
+      translating: segment.translation === undefined,
+      index: idx,
+    });
     if (segment.translation === undefined) void this.translateSegment(idx);
   }
 
@@ -301,7 +309,10 @@ export class SubtitleController {
       });
     }
     if (this.index === idx) {
-      this.setState({ translation: this.segments[idx]?.translation ?? '' });
+      this.setState({
+        translation: this.segments[idx]?.translation ?? '',
+        translating: false,
+      });
     }
     this.emitTranscript();
   }
@@ -317,31 +328,33 @@ export class SubtitleController {
     if (text === this.lastLiveText) return;
     const hadText = this.lastLiveText !== '';
     this.lastLiveText = text;
+    const token = ++this.liveTranslateToken;
     // Empty gap between cues: keep the last line visible instead of blanking,
     // and use the gap as the sentence boundary in learning mode.
     if (!text) {
       if (this.autoPause && hadText) this.video?.pause();
       return;
     }
-    this.setState({ original: text });
+    this.setState({ original: text, translation: '', translating: true });
     clearTimeout(this.liveDebounce);
     this.liveDebounce = setTimeout(
-      () => void this.translateLive(text, caption?.start ?? this.video?.currentTime ?? 0),
-      600,
+      () => void this.translateLive(text, caption?.start ?? this.video?.currentTime ?? 0, token),
+      200,
     );
   }
 
-  private async translateLive(text: string, start: number): Promise<void> {
-    const token = ++this.liveTranslateToken;
+  private async translateLive(text: string, start: number, token: number): Promise<void> {
     try {
       const [translation] = await this.deps.translate([text]);
       // Only apply if nothing newer superseded this request.
       if (token === this.liveTranslateToken && this.lastLiveText === text) {
-        this.setState({ translation: translation ?? '' });
+        this.setState({ translation: translation ?? '', translating: false });
       }
       this.appendLiveHistory(text, translation ?? '', start);
     } catch {
-      // keep the previous translation; the next stable caption retries
+      if (token === this.liveTranslateToken && this.lastLiveText === text) {
+        this.setState({ translation: '', translating: false });
+      }
     }
   }
 
