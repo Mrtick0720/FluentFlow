@@ -399,6 +399,10 @@ function QuickTranslate({ actions, label }: { actions: UIActions; label: string 
         role="dialog"
         aria-label="快捷翻译"
       >
+        <div className="lf-qt-dragbar">
+          <GripIcon />
+          <span>拖动移动</span>
+        </div>
         <div className="lf-qt-cols">
           <div className="lf-qt-col lf-qt-col-in">
             <select
@@ -420,10 +424,23 @@ function QuickTranslate({ actions, label }: { actions: UIActions; label: string 
               placeholder="输入或粘贴要翻译的文本…"
               autoFocus
             />
+            <div className="lf-qt-incount">
+              <span>{input.length} 字</span>
+              {input && (
+                <button
+                  className="lf-qt-iconbtn lf-qt-iconbtn-sm"
+                  onClick={() => setInput('')}
+                  title="清空"
+                  aria-label="清空"
+                >
+                  <ClearIcon />
+                </button>
+              )}
+            </div>
           </div>
 
           <button className="lf-qt-swap" onClick={swap} title="交换语言" aria-label="交换语言">
-            ⇄
+            <SwapIcon />
           </button>
 
           <div className="lf-qt-col lf-qt-col-out">
@@ -470,6 +487,29 @@ const CopyIcon = () => (
   <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <rect x="9" y="9" width="11" height="11" rx="2" />
     <path d="M5 15V5a2 2 0 0 1 2-2h10" />
+  </svg>
+);
+
+const SwapIcon = () => (
+  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M7 8h13l-3.5-3.5M17 16H4l3.5 3.5" />
+  </svg>
+);
+
+const ClearIcon = () => (
+  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <path d="M6 6l12 12M18 6L6 18" />
+  </svg>
+);
+
+const GripIcon = () => (
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+    <circle cx="8" cy="9" r="1.4" />
+    <circle cx="12" cy="9" r="1.4" />
+    <circle cx="16" cy="9" r="1.4" />
+    <circle cx="8" cy="15" r="1.4" />
+    <circle cx="12" cy="15" r="1.4" />
+    <circle cx="16" cy="15" r="1.4" />
   </svg>
 );
 

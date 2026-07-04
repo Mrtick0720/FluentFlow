@@ -607,6 +607,19 @@
   cursor: default;
 }
 
+.lf-qt-dragbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 26px;
+  color: var(--lf-fg-soft);
+  font-size: 12px;
+  cursor: move;
+  border-bottom: 1px solid var(--lf-border);
+  user-select: none;
+}
+
 .lf-qt-cols {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
@@ -645,11 +658,20 @@
 .lf-qt-input,
 .lf-qt-output {
   flex: 1;
-  min-height: 190px;
+  min-height: 170px;
   max-height: 46vh;
   font-size: 16px;
   line-height: 1.5;
   color: var(--lf-fg);
+}
+
+.lf-qt-incount {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  color: var(--lf-fg-soft);
+  font-size: 12px;
 }
 
 .lf-qt-input {
@@ -667,6 +689,9 @@
 
 .lf-qt-swap {
   align-self: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 30px;
   height: 30px;
   border-radius: 8px;
@@ -674,7 +699,6 @@
   background: var(--lf-bg);
   color: var(--lf-fg-soft);
   cursor: pointer;
-  font-size: 13px;
 }
 
 .lf-qt-swap:hover {
@@ -690,7 +714,6 @@
   gap: 10px;
   padding: 8px 14px;
   border-top: 1px solid var(--lf-border);
-  cursor: move;
 }
 
 .lf-qt-model {
@@ -728,6 +751,11 @@
 .lf-qt-iconbtn:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+.lf-qt-iconbtn-sm {
+  width: 22px;
+  height: 22px;
 }
 
 /* ---------- toast ---------- */
