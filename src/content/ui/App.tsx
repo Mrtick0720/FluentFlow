@@ -491,7 +491,7 @@ const CopyIcon = () => (
 );
 
 const SwapIcon = () => (
-  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M7 8h13l-3.5-3.5M17 16H4l3.5 3.5" />
   </svg>
 );
