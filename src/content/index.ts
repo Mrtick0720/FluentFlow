@@ -302,6 +302,11 @@ async function main() {
   // Everything the callback chain needs is now initialized — safe to start.
   detectVideo();
 
+  // Hide the floating widget during fullscreen video playback.
+  document.addEventListener('fullscreenchange', () => {
+    uiStore.set({ isFullscreen: !!document.fullscreenElement });
+  });
+
   /* ---------- word & sentence cards ---------- */
 
   async function openWordCard(word: string, context: string | undefined, x: number, y: number) {
@@ -586,6 +591,8 @@ async function main() {
       const open = uiStore.get().playerMenu !== null;
       uiStore.set({ playerMenu: open ? null : { x: anchor.left, y: anchor.top } });
     },
+    openSettings: () => void sendRequest('options.open', {}).catch(() => {}),
+    quickTranslate: () => showToast('快捷翻译：功能开发中，稍后完善'),
   };
 
   createRoot(mount).render(createElement(App, { actions }));

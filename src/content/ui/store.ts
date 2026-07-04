@@ -39,6 +39,8 @@ export interface UIState {
   /** Current viewport-relative rectangle of the active video. */
   /** Main video's on-screen rect; anchors the FAB stack and subtitle panel. */
   videoRect: { left: number; top: number; width: number; height: number } | null;
+  /** A video is playing fullscreen — hide the floating button. */
+  isFullscreen: boolean;
   transcript: SubtitleSegment[];
   transcriptVisible: boolean;
   pageActive: boolean;
@@ -58,6 +60,7 @@ const initial: UIState = {
   subtitleState: null,
   subtitleStyle: null,
   videoRect: null,
+  isFullscreen: false,
   transcript: [],
   transcriptVisible: false,
   pageActive: false,
