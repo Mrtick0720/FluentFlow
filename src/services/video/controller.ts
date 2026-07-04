@@ -450,10 +450,44 @@ export class SubtitleController {
     } else {
       this.liveSentence = { text, start, translation: '', translatedText: '' };
     }
-    // Translate in the background while the sentence builds, so the pair is
-    // (nearly) ready the moment the sentence completes.
-    this.livePending = { text: this.liveSentence.text, start: this.liveSentence.start };
-    this.schedulePump(this.liveInflight ? 0 : 120);
+    // Continuous speech may never produce a caption gap: split as soon as
+    // the buffer contains completed sentences (or grows past a hard cap).
+    this.splitCompletedLiveSentences();
+
+    if (this.liveSentence) {
+      // Translate in the background while the sentence builds, so the pair
+      // is (nearly) ready the moment the sentence completes. Never clobber a
+      // pending exact-translation request for a sentence already on screen.
+      this.livePending ??= { text: this.liveSentence.text, start: this.liveSentence.start };
+      this.schedulePump(this.liveInflight ? 0 : 120);
+    }
+  }
+
+  /** Buffer cap for punctuation-less caption streams. */
+  private static readonly LIVE_MAX_BUFFER_CHARS = 220;
+
+  /**
+   * If the buffer already contains finished sentences ("… better. Closing
+   * the"), display the finished part now and keep only the tail buffering.
+   */
+  private splitCompletedLiveSentences(): void {
+    const sentence = this.liveSentence;
+    if (!sentence) return;
+    const match = sentence.text.match(/^([\s\S]*[.!?…]["')\]]?)\s+(\S[\s\S]*)$/);
+    if (match) {
+      const completed = match[1]!.trim();
+      const rest = match[2]!.trim();
+      this.displayLiveSentence(completed, sentence.start, sentence);
+      if (this.autoPause) this.video?.pause();
+      this.liveSentence = {
+        text: rest,
+        start: this.video?.currentTime ?? sentence.start,
+        translation: '',
+        translatedText: '',
+      };
+    } else if (sentence.text.length > SubtitleController.LIVE_MAX_BUFFER_CHARS) {
+      this.finalizeLiveSentence();
+    }
   }
 
   /** Sentence completed: show English + best-available Chinese together. */
@@ -461,17 +495,24 @@ export class SubtitleController {
     const sentence = this.liveSentence;
     this.liveSentence = null;
     if (!sentence) return;
-    const exact = sentence.translatedText === sentence.text;
+    this.displayLiveSentence(sentence.text, sentence.start, sentence);
+  }
+
+  private displayLiveSentence(
+    text: string,
+    start: number,
+    stash: { translation: string; translatedText: string },
+  ): void {
     this.setState({
-      original: sentence.text,
-      translation: sentence.translation,
-      translating: sentence.translation === '',
+      original: text,
+      translation: stash.translation,
+      translating: stash.translation === '',
     });
-    this.appendLiveHistory(sentence.text, sentence.translation, sentence.start);
-    // The tail of the sentence may not be translated yet — fetch the exact
-    // translation and refresh the Chinese line when it lands.
-    if (!exact) {
-      this.livePending = { text: sentence.text, start: sentence.start };
+    this.appendLiveHistory(text, stash.translation, start);
+    // The stashed translation may cover only a prefix (or more) of this
+    // sentence — fetch the exact translation and refresh when it lands.
+    if (stash.translatedText !== text) {
+      this.livePending = { text, start };
       this.schedulePump(0);
     }
   }

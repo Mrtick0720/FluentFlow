@@ -204,6 +204,37 @@ describe('SubtitleController live captions (whole-sentence mode)', () => {
     expect(latest(harness.states).original).toBe('Totally different words');
   });
 
+  it('splits at sentence punctuation when speech never pauses', async () => {
+    vi.useFakeTimers();
+    const harness = liveHarness(async ([text]) => [`译：${text}`]);
+    await harness.controller.attach('https://example.com/video');
+
+    harness.emit({ text: 'We know something' });
+    expect(latest(harness.states).original).toBe(''); // buffering
+    harness.emit({ text: 'We know something. And now more' });
+    // The finished sentence displays immediately; the tail keeps buffering.
+    expect(latest(harness.states).original).toBe('We know something.');
+    await vi.advanceTimersByTimeAsync(300);
+    expect(latest(harness.states).translation).toBe('译：We know something.');
+
+    harness.emit(null);
+    expect(latest(harness.states).original).toBe('And now more');
+  });
+
+  it('caps a punctuation-less buffer instead of growing forever', async () => {
+    vi.useFakeTimers();
+    const harness = liveHarness(async ([text]) => [`译：${text}`]);
+    await harness.controller.attach('https://example.com/video');
+
+    let text = 'word';
+    while (text.length <= 230) {
+      text += ' word';
+      harness.emit({ text });
+    }
+    // Once past the cap the buffer is flushed to the panel without any gap.
+    expect(latest(harness.states).original.length).toBeGreaterThan(200);
+  });
+
   it('clears the panel after a long silence', async () => {
     vi.useFakeTimers();
     const harness = liveHarness(async ([text]) => [`译：${text}`]);
