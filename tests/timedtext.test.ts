@@ -120,6 +120,27 @@ describe('segmentsFromTimedText', () => {
     expect(segments[0]!.text).toBe('Real words.');
   });
 
+  it('splits on speaker-change markers and drops them', () => {
+    const segments = segmentsFromTimedText({
+      events: [
+        {
+          tStartMs: 0,
+          segs: [
+            { utf8: '>>' },
+            { utf8: 'First', tOffsetMs: 100 },
+            { utf8: 'speaker', tOffsetMs: 300 },
+            { utf8: '>>', tOffsetMs: 600 },
+            { utf8: 'Second', tOffsetMs: 700 },
+            { utf8: 'speaker', tOffsetMs: 900 },
+          ],
+        },
+      ],
+    });
+    expect(segments).toHaveLength(2);
+    expect(segments[0]!.text).toBe('First speaker');
+    expect(segments[1]!.text).toBe('Second speaker');
+  });
+
   it('caps runaway sentences at a max length', () => {
     const words = Array.from({ length: 60 }, (_, i) => ({
       utf8: `word${i}`,

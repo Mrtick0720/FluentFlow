@@ -137,14 +137,26 @@ const CLAUSE_CONJUNCTION = /^(and|but|so|or|because|which|that|when|while|then|w
  * punctuation-light ASR speech still yields readable lines.
  */
 export function segmentsFromTimedText(data: { events?: Json3Event[] }): SubtitleSegment[] {
-  const words: Array<{ text: string; startMs: number }> = [];
+  const words: Array<{ text: string; startMs: number; boundary?: boolean }> = [];
+  let pendingBoundary = false;
   for (const event of data.events ?? []) {
     if (!event.segs || event.aAppend) continue;
     const base = event.tStartMs ?? 0;
     for (const seg of event.segs) {
-      const text = (seg.utf8 ?? '').replace(/\s+/g, ' ').trim();
+      let text = (seg.utf8 ?? '').replace(/\s+/g, ' ').trim();
       if (!text) continue;
-      words.push({ text, startMs: base + (seg.tOffsetMs ?? 0) });
+      // CC speaker-change markers: force a boundary, drop the marker itself.
+      if (/^>{1,2}$/.test(text)) {
+        pendingBoundary = true;
+        continue;
+      }
+      if (/^>{1,2}\s*/.test(text)) {
+        pendingBoundary = true;
+        text = text.replace(/^>+\s*/, '');
+        if (!text) continue;
+      }
+      words.push({ text, startMs: base + (seg.tOffsetMs ?? 0), boundary: pendingBoundary });
+      pendingBoundary = false;
     }
   }
 
@@ -168,6 +180,7 @@ export function segmentsFromTimedText(data: { events?: Json3Event[] }): Subtitle
   for (let i = 0; i < words.length; i++) {
     const word = words[i]!;
     const next = words[i + 1];
+    if (word.boundary) flush(word.startMs); // speaker change
     current ??= { parts: [], startMs: word.startMs };
     current.parts.push(word.text);
 

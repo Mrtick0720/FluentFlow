@@ -62,6 +62,11 @@ export function isRelatedCaption(prev: string, next: string): boolean {
   return mergeCaptions(prev, next) !== null;
 }
 
+/** Drop CC speaker-change markers ('>>', leading dashes) from a caption. */
+export function stripSpeakerMarkers(text: string): string {
+  return text.replace(/^\s*(?:>{1,2}|[-–—]{1,2})\s*/, '').trim();
+}
+
 const CLAUSE_CONJUNCTION =
   /\s+(and|but|so|or|because|which|that|when|while|then|where|although)\s+/gi;
 
@@ -79,6 +84,11 @@ export function findLiveSplit(
   softChars: number,
   hardChars: number,
 ): { completed: string; rest: string } | null {
+  // 0) Speaker change ('>>' in CC streams) is always a boundary; the marker
+  //    itself is noise and is dropped.
+  const speaker = text.match(/^(.{2,}?)\s*>{1,2}\s*(\S[\s\S]*)$/);
+  if (speaker) return { completed: speaker[1]!.trim(), rest: speaker[2]!.trim() };
+
   // 1) Finished sentence(s): break after the last terminator.
   const sentence = text.match(/^([\s\S]*[.!?…]["')\]]?)\s+(\S[\s\S]*)$/);
   if (sentence) return { completed: sentence[1]!.trim(), rest: sentence[2]!.trim() };
@@ -468,14 +478,14 @@ export class SubtitleController {
    * English + Chinese pair appears at once, replacing the previous pair.
    */
   private onLiveCaption(caption: CaptionState | null): void {
-    const text = caption?.text ?? '';
-    if (text === this.lastLiveText) return;
+    const raw = caption?.text ?? '';
+    if (raw === this.lastLiveText) return;
     const prev = this.lastLiveText;
-    this.lastLiveText = text;
+    this.lastLiveText = raw;
     clearTimeout(this.liveIdleTimer);
 
     // Gap between cues = sentence boundary.
-    if (!text) {
+    if (!raw) {
       this.finalizeLiveSentence();
       if (this.autoPause && prev) this.video?.pause();
       // Long silence: don't leave the last pair on screen forever.
@@ -486,6 +496,11 @@ export class SubtitleController {
       }, 7000);
       return;
     }
+
+    // Leading speaker markers ('>>') are display noise; internal ones are
+    // split into separate sentences by findLiveSplit.
+    const text = stripSpeakerMarkers(raw);
+    if (!text) return; // marker-only caption; the words follow shortly
 
     const start = caption?.start ?? this.video?.currentTime ?? 0;
     if (this.liveSentence) {

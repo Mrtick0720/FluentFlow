@@ -266,6 +266,21 @@ describe('SubtitleController live captions (whole-sentence mode)', () => {
     expect(shown.length).toBeLessThanOrEqual(100);
   });
 
+  it('splits at speaker-change markers and strips them from display', async () => {
+    vi.useFakeTimers();
+    const harness = liveHarness(async ([text]) => [`译：${text}`]);
+    await harness.controller.attach('https://example.com/video');
+
+    harness.emit({ text: '>> But open source helps companies' });
+    expect(latest(harness.states).original).toBe(''); // buffering, marker stripped
+    harness.emit({ text: '>> But open source helps companies >> people we talk to' });
+    // Speaker change: finished part displays without any '>>' noise.
+    expect(latest(harness.states).original).toBe('But open source helps companies');
+
+    harness.emit(null);
+    expect(latest(harness.states).original).toBe('people we talk to');
+  });
+
   it('clears the panel after a long silence', async () => {
     vi.useFakeTimers();
     const harness = liveHarness(async ([text]) => [`译：${text}`]);
