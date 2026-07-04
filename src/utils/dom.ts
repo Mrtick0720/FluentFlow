@@ -129,6 +129,29 @@ export function isOccluded(el: HTMLElement): boolean {
   return tested > 0; // tested in-viewport points, owned none → covered
 }
 
+/**
+ * Layout-sensitive elements (navigation, controls, short labels, absolutely
+ * positioned bits) should be translated in place (original hidden, no added
+ * block) rather than getting a bilingual block appended — inserting height
+ * there breaks tight layouts (nav bars, cards, carousels). Article paragraphs
+ * return false and keep the bilingual layout.
+ */
+export function shouldReplaceInPlace(el: HTMLElement): boolean {
+  if (
+    el.closest(
+      'nav,header,footer,[role="navigation"],[role="tablist"],[role="menubar"],[role="menu"],' +
+        'button,[role="button"],[role="tab"],[role="menuitem"],th',
+    )
+  ) {
+    return true;
+  }
+  const text = (el.textContent ?? '').trim();
+  if (text.length <= 20) return true; // short UI labels
+  const cs = getComputedStyle(el);
+  if (cs.position === 'absolute' || cs.position === 'fixed') return true;
+  return false;
+}
+
 /** Heuristic: is this text already (mostly) in the target language? */
 export function looksLikeTargetLanguage(text: string, targetLang: string): boolean {
   if (!targetLang.toLowerCase().startsWith('zh')) return false;

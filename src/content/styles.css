@@ -30,6 +30,21 @@
   opacity: 0.9;
 }
 
+/* In-place replacement (nav / controls / labels / positioned): hide the
+   original and drop the translation in with no extra height, so tight
+   layouts don't shift or overlap. */
+[data-lf-translated].lf-replaced > .lf-original {
+  display: none !important;
+}
+
+[data-lf-translated].lf-replaced > .lf-trans {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: none;
+}
+
 html[data-lf-mode='translation-only'] [data-lf-translated] > .lf-original {
   display: none !important;
 }

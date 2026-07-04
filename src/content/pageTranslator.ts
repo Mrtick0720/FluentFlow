@@ -1,7 +1,12 @@
 import { ATTR_TRANSLATED } from '@/shared/constants';
 import type { DisplayMode } from '@/types/models';
 import { debounce } from '@/utils/async';
-import { collectTranslatableBlocks, isOccluded, looksLikeTargetLanguage } from '@/utils/dom';
+import {
+  collectTranslatableBlocks,
+  isOccluded,
+  looksLikeTargetLanguage,
+  shouldReplaceInPlace,
+} from '@/utils/dom';
 
 export interface PageTranslatorOptions {
   translate: (texts: string[]) => Promise<string[]>;
@@ -89,6 +94,7 @@ export class PageTranslator {
           original.remove();
         }
         el.removeAttribute(ATTR_TRANSLATED);
+        el.classList.remove('lf-replaced');
       }
     });
     this.doneCount = 0;
@@ -154,6 +160,13 @@ export class PageTranslator {
 
   private applyTranslation(el: HTMLElement, translation: string): void {
     if (el.hasAttribute(ATTR_TRANSLATED)) return;
+
+    // Decide BEFORE moving children out (it inspects el.textContent).
+    // Layout-sensitive elements: hide the original and show only the
+    // translation in place (no added block) so tight layouts don't break.
+    const replace = shouldReplaceInPlace(el);
+    if (replace) el.classList.add('lf-replaced');
+
     const original = document.createElement('span');
     original.className = 'lf-original';
     while (el.firstChild) original.appendChild(el.firstChild);
@@ -161,9 +174,9 @@ export class PageTranslator {
     // Headings read cleaner as plain text below the title, without the
     // tinted/underline block the body paragraphs use.
     const isHeading = /^H[1-6]$/.test(el.tagName);
-    const style = isHeading ? 'plain' : this.opts.style;
+    const style = replace || isHeading ? 'plain' : this.opts.style;
     const trans = document.createElement('span');
-    trans.className = `lf-trans lf-style-${style}${isHeading ? ' lf-heading' : ''}`;
+    trans.className = `lf-trans lf-style-${style}${isHeading && !replace ? ' lf-heading' : ''}`;
     trans.setAttribute('translate', 'no');
     trans.style.setProperty('--lf-font-scale', String(this.opts.fontScale));
     trans.textContent = translation;

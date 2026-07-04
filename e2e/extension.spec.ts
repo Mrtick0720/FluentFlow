@@ -8,9 +8,10 @@ const DIST = path.resolve(process.cwd(), 'dist');
 const FIXTURE_HTML = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Fixture Article</title></head>
 <body>
+  <nav><ul><li>World news today here</li></ul></nav>
   <article>
     <h1>Learning languages while reading</h1>
-    <p>Reading real articles is one of the best ways to learn a language.</p>
+    <p id="body">Reading real articles is one of the best ways to learn a language.</p>
     <p>Subtitles and bilingual text make the process even smoother.</p>
   </article>
   <!-- A large video element so the content script's main-video path runs
@@ -116,8 +117,11 @@ test('loads the extension and translates a page end-to-end', async () => {
     await expect(firstTranslation).toContainText('译文：', { timeout: 15_000 });
     await expect(page.locator('html')).toHaveAttribute('data-lf-mode', 'bilingual');
 
-    // Original text stays in place (bilingual mode).
-    await expect(page.locator('article .lf-original').first()).toBeVisible();
+    // Body paragraph stays bilingual (original visible below/above the translation).
+    await expect(page.locator('#body .lf-original')).toBeVisible();
+    // Nav item is translated in place (original hidden, no added block).
+    await expect(page.locator('nav li.lf-replaced')).toHaveCount(1);
+    await expect(page.locator('nav li .lf-original')).toBeHidden();
   } finally {
     await context.close();
     server.close();
