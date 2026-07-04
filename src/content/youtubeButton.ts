@@ -40,9 +40,8 @@ export function injectYouTubePlayerButton(onClick: (rect: DOMRect) => void): () 
       onClick(btn.getBoundingClientRect());
     });
 
-    // Place before the settings gear so it sits among the native controls.
-    const gear = controls.querySelector('.ytp-settings-button');
-    controls.insertBefore(btn, gear ?? controls.firstChild);
+    // Place at the far-right end of the control bar (after fullscreen).
+    controls.appendChild(btn);
   }
 
   ensure();
