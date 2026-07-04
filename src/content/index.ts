@@ -102,7 +102,38 @@ async function main() {
     onTranscript: (segments) => uiStore.set({ transcript: segments }),
   });
 
-  let autoSubtitleDone = false;
+  // Auto-open coordination. Opening in live mode and then upgrading to the full
+  // transcript flickers; on YouTube we instead wait for captions to be ready
+  // and open directly in track mode.
+  let autoSubtitleArmed = false; // want to auto-open on this page
+  let autoSubtitleOpened = false; // already auto-opened (don't repeat)
+  let subtitleUpgraded = false; // live→track upgrade already done
+
+  function openAutoSubtitle() {
+    if (!autoSubtitleArmed || autoSubtitleOpened || uiStore.get().subtitleVisible) return;
+    autoSubtitleArmed = false;
+    autoSubtitleOpened = true;
+    void toggleSubtitlePanel();
+  }
+
+  function requestAutoSubtitle() {
+    if (autoSubtitleArmed || autoSubtitleOpened || uiStore.get().subtitleVisible) return;
+    autoSubtitleArmed = true;
+    if (/(^|\.)youtube\.com$/.test(location.hostname)) {
+      // Prefer opening once the player has fetched captions (→ track mode).
+      // onTimedTextCaptured triggers openAutoSubtitle; this is the fallback.
+      setTimeout(openAutoSubtitle, 5000);
+    } else {
+      openAutoSubtitle();
+    }
+  }
+
+  function resetAutoSubtitle() {
+    autoSubtitleArmed = false;
+    autoSubtitleOpened = false;
+    subtitleUpgraded = false;
+  }
+
   function detectVideo(attempt = 0) {
     if (isVideoPage() && findMainVideo()) {
       uiStore.set({ videoDetected: true });
@@ -110,10 +141,7 @@ async function main() {
       // Auto-open the bilingual subtitle panel: globally, or on this site.
       const autoSubtitle =
         settings.autoSubtitleVideoSites || settings.autoSubtitleSites.includes(location.hostname);
-      if (autoSubtitle && !autoSubtitleDone && !uiStore.get().subtitleVisible) {
-        autoSubtitleDone = true;
-        void toggleSubtitlePanel();
-      }
+      if (autoSubtitle) requestAutoSubtitle();
     } else if (attempt < 5) {
       setTimeout(() => detectVideo(attempt + 1), 1500);
     }
@@ -132,11 +160,11 @@ async function main() {
     // buttons/subtitle don't linger over the feed); entering one re-detects.
     window.addEventListener('yt-navigate-finish', () => {
       setTimeout(() => {
+        resetAutoSubtitle();
         if (isVideoPage()) {
           detectVideo();
         } else {
           if (uiStore.get().subtitleVisible) void toggleSubtitlePanel();
-          autoSubtitleDone = false;
           uiStore.set({ videoDetected: false, videoRect: null, playerMenu: null });
         }
       }, 300);
@@ -149,8 +177,15 @@ async function main() {
   if (/(^|\.)youtube\.com$/.test(location.hostname)) {
     initTimedTextCapture();
     onTimedTextCaptured(() => {
+      // Auto-open path: captions are now ready — open directly in track mode.
+      if (autoSubtitleArmed) {
+        openAutoSubtitle();
+        return;
+      }
+      // Manual early-open path: upgrade live → full transcript, at most once.
       const ui = uiStore.get();
-      if (ui.subtitleVisible && ui.subtitleState?.mode === 'live') {
+      if (ui.subtitleVisible && ui.subtitleState?.mode === 'live' && !subtitleUpgraded) {
+        subtitleUpgraded = true;
         void subtitleController.attach(location.href).then(() => {
           showToast('已获取完整字幕，切换到整片模式');
         });
@@ -230,7 +265,7 @@ async function main() {
         if (!hasVideo && uiStore.get().subtitleVisible) {
           subtitleController.detach();
           uiStore.set({ subtitleVisible: false, transcript: [], transcriptVisible: false });
-          autoSubtitleDone = false;
+          resetAutoSubtitle();
         }
       });
     };
