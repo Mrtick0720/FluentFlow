@@ -109,19 +109,56 @@ async function main() {
   }
   detectVideo();
 
+  let stopVideoLayoutSync: (() => void) | null = null;
+
+  function startVideoLayoutSync(): () => void {
+    let frame = 0;
+    const measure = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const rect = subtitleController.getVideoRect();
+        uiStore.set({
+          subtitleVideoRect: rect
+            ? { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
+            : null,
+        });
+      });
+    };
+    const video = subtitleController.getVideoElement();
+    const resizeObserver = video && typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(measure)
+      : null;
+    if (video) resizeObserver?.observe(video);
+    window.addEventListener('resize', measure);
+    window.addEventListener('scroll', measure, true);
+    document.addEventListener('fullscreenchange', measure);
+    measure();
+    return () => {
+      cancelAnimationFrame(frame);
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('scroll', measure, true);
+      document.removeEventListener('fullscreenchange', measure);
+    };
+  }
+
   async function toggleSubtitlePanel() {
     if (uiStore.get().subtitleVisible) {
+      stopVideoLayoutSync?.();
+      stopVideoLayoutSync = null;
       subtitleController.detach();
-      uiStore.set({ subtitleVisible: false, transcript: [], transcriptVisible: false });
+      uiStore.set({
+        subtitleVisible: false,
+        subtitleVideoRect: null,
+        transcript: [],
+        transcriptVisible: false,
+      });
       return;
     }
     uiStore.set({ subtitleVisible: true });
     const state = await subtitleController.attach(location.href);
-    // Anchor the panel to the lower part of the video by default.
-    const rect = subtitleController.getVideoRect();
-    uiStore.set({
-      subtitleAnchor: rect ? { x: rect.left + rect.width / 2, y: rect.bottom - 230 } : null,
-    });
+    stopVideoLayoutSync?.();
+    stopVideoLayoutSync = startVideoLayoutSync();
     if (state.status === 'ready' && !videoWatchedRecorded) {
       videoWatchedRecorded = true;
       void sendRequest('stats.record', {

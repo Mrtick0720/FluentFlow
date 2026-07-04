@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { uiStore, type UIState } from './store';
+import { getSubtitleOverlayGeometry } from './subtitleLayout';
 
 export interface UIActions {
   togglePage(): void;
@@ -261,6 +262,7 @@ const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 function SubtitlePanel({ ui, actions }: { ui: UIState; actions: UIActions }) {
   const s = ui.subtitleState!;
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const [controlsPinned, setControlsPinned] = useState(false);
   const dragRef = useRef<{ dx: number; dy: number } | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -281,64 +283,97 @@ function SubtitlePanel({ ui, actions }: { ui: UIState; actions: UIActions }) {
     dragRef.current = null;
   };
 
-  // Priority: user drag position > video-bottom anchor > viewport bottom.
-  const style: CSSProperties = pos
-    ? { left: pos.left, top: pos.top, bottom: 'auto', transform: 'none' }
-    : ui.subtitleAnchor
-      ? {
-          left: Math.min(Math.max(ui.subtitleAnchor.x, 190), window.innerWidth - 190),
-          top: Math.max(8, Math.min(ui.subtitleAnchor.y, window.innerHeight - 200)),
-          bottom: 'auto',
-        }
-      : {};
+  const geometry = getSubtitleOverlayGeometry(ui.subtitleVideoRect, {
+    width: window.innerWidth,
+    height: window.innerHeight,
+  });
+  const style: CSSProperties = {
+    left: pos?.left ?? geometry.left,
+    top: pos?.top ?? geometry.top,
+    width: geometry.width,
+  };
 
   const abLabel = !s.abLoop ? 'A-B' : s.abLoop.b === -1 ? 'B?' : 'A-B ✓';
+  const stopToolbarPointer = (event: ReactPointerEvent) => event.stopPropagation();
 
   return (
-    <div className="lf-subtitle-panel" style={style} ref={panelRef} role="region" aria-label="字幕学习面板">
+    <div
+      className={`lf-subtitle-panel ${controlsPinned ? 'lf-controls-pinned' : ''}`}
+      style={style}
+      ref={panelRef}
+      role="region"
+      aria-label="双语字幕"
+    >
       <div
-        className="lf-subtitle-header"
-        onPointerDown={onDragStart}
-        onPointerMove={onDragMove}
-        onPointerUp={onDragEnd}
+        className="lf-subtitle-toolbar"
+        role="toolbar"
+        aria-label="字幕学习工具"
+        onPointerDown={stopToolbarPointer}
       >
-        <span className="lf-muted">
-          字幕学习{s.mode === 'live' ? '（跟随播放器字幕）' : ` · ${s.index + 1}/${s.total}`}
-        </span>
-        <span className="lf-row">
-          <button
-            className={`lf-btn ${ui.transcriptVisible ? 'lf-btn-primary' : ''}`}
-            onClick={actions.subtitleToggleTranscript}
-            title="字幕列表（歌词模式）"
+        <button
+          className={`lf-btn ${ui.transcriptVisible ? 'lf-btn-primary' : ''}`}
+          onClick={actions.subtitleToggleTranscript}
+          title="字幕列表"
+        >
+          ≡ 列表
+        </button>
+        <button className="lf-btn" onClick={actions.subtitlePrev} title="上一句" aria-label="上一句">⏮</button>
+        <button className="lf-btn" onClick={actions.subtitleRepeat} title="重复本句" aria-label="重复本句">↻</button>
+        <button className="lf-btn" onClick={actions.subtitleNext} title="下一句" aria-label="下一句">⏭</button>
+        <button
+          className={`lf-btn ${s.abLoop ? 'lf-btn-primary' : ''}`}
+          onClick={actions.subtitleAB}
+          title="A-B 循环"
+        >
+          {abLabel}
+        </button>
+        <button
+          className={`lf-btn ${s.autoPause ? 'lf-btn-primary' : ''}`}
+          onClick={actions.subtitleToggleAutoPause}
+          title="每句结束自动暂停"
+        >
+          逐句停
+        </button>
+        <select
+          className="lf-select"
+          value={s.playbackRate}
+          onChange={(event) => actions.subtitleSpeed(Number(event.target.value))}
+          aria-label="播放速度"
+        >
+          {SPEEDS.map((rate) => <option key={rate} value={rate}>{rate}×</option>)}
+        </select>
+        {s.tracks.length > 0 && (
+          <select
+            className="lf-select"
+            value={s.activeTrackId}
+            onChange={(event) => actions.subtitleSelectTrack(event.target.value)}
+            aria-label="选择字幕轨道"
           >
-            ≡ 列表
-          </button>
-          {s.tracks.length > 0 && (
-            <select
-              className="lf-select"
-              value={s.activeTrackId}
-              onChange={(e) => actions.subtitleSelectTrack(e.target.value)}
-              aria-label="选择字幕轨道"
-            >
-              {s.tracks.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          )}
-          <button className="lf-close" style={{ position: 'static' }} onClick={actions.toggleSubtitlePanel} aria-label="关闭面板">
-            ✕
-          </button>
-        </span>
+            {s.tracks.map((track) => <option key={track.id} value={track.id}>{track.label}</option>)}
+          </select>
+        )}
+        <button className="lf-btn" onClick={actions.subtitleBookmark} title="收藏当前字幕">🔖</button>
+        <button
+          className="lf-btn"
+          onClick={actions.subtitleExplain}
+          disabled={!ui.aiAvailable}
+          title={ui.aiAvailable ? '讲解当前句' : '需要在设置中配置 AI'}
+        >
+          ✨
+        </button>
+        <button className="lf-btn" onClick={actions.toggleSubtitlePanel} aria-label="关闭字幕">✕</button>
       </div>
       <div
-        className="lf-subtitle-body"
+        className="lf-subtitle-surface"
         style={
           ui.subtitleStyle
             ? ({ '--lf-sub-size': `${ui.subtitleStyle.fontSize}px` } as CSSProperties)
             : undefined
         }
+        onPointerDown={onDragStart}
+        onPointerMove={onDragMove}
+        onPointerUp={onDragEnd}
+        onClick={() => setControlsPinned((pinned) => !pinned)}
       >
         {s.status === 'no-video' && <div className="lf-muted">未检测到视频。</div>}
         {s.status === 'no-subtitles' && (
@@ -351,62 +386,16 @@ function SubtitlePanel({ ui, actions }: { ui: UIState; actions: UIActions }) {
         )}
         {s.status === 'ready' && (s.mode === 'track' || s.original) && (
           <>
+            {(ui.subtitleStyle?.showTranslation ?? true) && (
+              <div className={`lf-subtitle-translation ${s.translating ? 'lf-pending' : ''}`}>
+                {s.translating ? '翻译中…' : s.translation}
+              </div>
+            )}
             {(ui.subtitleStyle?.showOriginal ?? true) && (
               <div className="lf-subtitle-original">{s.original || '…'}</div>
             )}
-            {(ui.subtitleStyle?.showTranslation ?? true) && (
-              <div className="lf-subtitle-translation">{s.translation}</div>
-            )}
           </>
         )}
-      </div>
-      <div className="lf-subtitle-controls">
-        <button className="lf-btn" onClick={actions.subtitlePrev} title="上一句" aria-label="上一句">
-          ⏮
-        </button>
-        <button className="lf-btn" onClick={actions.subtitleRepeat} title="重复本句" aria-label="重复本句">
-          ↻
-        </button>
-        <button className="lf-btn" onClick={actions.subtitleNext} title="下一句" aria-label="下一句">
-          ⏭
-        </button>
-        <button
-          className={`lf-btn ${s.abLoop ? 'lf-btn-primary' : ''}`}
-          onClick={actions.subtitleAB}
-          title="A-B 循环：第一次按设起点，第二次按设终点，第三次按取消"
-        >
-          {abLabel}
-        </button>
-        <button
-          className={`lf-btn ${s.autoPause ? 'lf-btn-primary' : ''}`}
-          onClick={actions.subtitleToggleAutoPause}
-          title="学习模式：每句结束自动暂停，按 ↻ 重听、⏭ 继续"
-        >
-          逐句停
-        </button>
-        <select
-          className="lf-select"
-          value={s.playbackRate}
-          onChange={(e) => actions.subtitleSpeed(Number(e.target.value))}
-          aria-label="播放速度"
-        >
-          {SPEEDS.map((r) => (
-            <option key={r} value={r}>
-              {r}×
-            </option>
-          ))}
-        </select>
-        <button className="lf-btn" onClick={actions.subtitleBookmark} title="收藏当前字幕句">
-          🔖 收藏
-        </button>
-        <button
-          className="lf-btn"
-          onClick={actions.subtitleExplain}
-          disabled={!ui.aiAvailable}
-          title={ui.aiAvailable ? 'AI 讲解当前句' : '需要在设置中配置 AI'}
-        >
-          ✨ 讲解
-        </button>
       </div>
     </div>
   );

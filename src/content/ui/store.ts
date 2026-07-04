@@ -36,8 +36,8 @@ export interface UIState {
   subtitleVisible: boolean;
   subtitleState: SubtitleViewState | null;
   subtitleStyle: SubtitleStyle | null;
-  /** Default panel position anchored to the video (center-x, top). */
-  subtitleAnchor: { x: number; y: number } | null;
+  /** Current viewport-relative rectangle of the active video. */
+  subtitleVideoRect: { left: number; top: number; width: number; height: number } | null;
   transcript: SubtitleSegment[];
   transcriptVisible: boolean;
   pageActive: boolean;
@@ -54,7 +54,7 @@ const initial: UIState = {
   subtitleVisible: false,
   subtitleState: null,
   subtitleStyle: null,
-  subtitleAnchor: null,
+  subtitleVideoRect: null,
   transcript: [],
   transcriptVisible: false,
   pageActive: false,

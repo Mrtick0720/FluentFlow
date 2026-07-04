@@ -156,6 +156,10 @@ export class SubtitleController {
     return this.video?.getBoundingClientRect() ?? null;
   }
 
+  getVideoElement(): HTMLVideoElement | null {
+    return this.video;
+  }
+
   private emitTranscript(): void {
     const source = this.state.mode === 'live' ? this.liveHistory : this.segments;
     this.deps.onTranscript?.(source.map((s) => ({ ...s })));

@@ -263,59 +263,106 @@
 
 .lf-subtitle-panel {
   position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: 24px;
-  width: min(760px, calc(100vw - 40px));
-  min-width: 320px;
-  min-height: 120px;
-  background: var(--lf-bg);
-  border: 1px solid var(--lf-border);
-  border-radius: 14px;
-  box-shadow: var(--lf-shadow);
   display: flex;
   flex-direction: column;
-  resize: both;
-  overflow: auto;
-}
-
-.lf-subtitle-header {
-  display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--lf-border);
-  cursor: grab;
-  user-select: none;
+  min-width: 240px;
+  max-width: calc(100vw - 24px);
+  color: #fff;
 }
 
-.lf-subtitle-body {
-  padding: 12px 16px;
-  flex: 1;
-  text-align: center;
-}
-
-.lf-subtitle-original {
-  font-size: var(--lf-sub-size, 22px);
-  font-weight: 600;
-  line-height: 1.4;
-}
-
-.lf-subtitle-translation {
-  font-size: calc(var(--lf-sub-size, 22px) * 0.82);
-  color: var(--lf-fg-soft);
-  margin-top: 6px;
-  line-height: 1.4;
-}
-
-.lf-subtitle-controls {
+.lf-subtitle-toolbar {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translate(-50%, 6px);
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 8px 12px 12px;
-  flex-wrap: wrap;
+  gap: 5px;
+  width: max-content;
+  max-width: min(92vw, 780px);
+  padding: 6px;
+  overflow-x: auto;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: rgba(20, 20, 20, 0.9);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s;
+  scrollbar-width: none;
+  z-index: 1;
+}
+
+.lf-subtitle-panel:hover .lf-subtitle-toolbar,
+.lf-subtitle-panel:focus-within .lf-subtitle-toolbar,
+.lf-subtitle-panel.lf-controls-pinned .lf-subtitle-toolbar {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+  pointer-events: auto;
+}
+
+.lf-subtitle-surface {
+  width: 100%;
+  max-width: 100%;
+  min-height: 64px;
+  padding: 10px 18px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  background: rgba(24, 24, 24, 0.78);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.2);
+  color: #fff;
+  text-align: center;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.lf-subtitle-surface:active {
+  cursor: grabbing;
+}
+
+.lf-subtitle-surface .lf-muted {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.lf-subtitle-original {
+  margin-top: 3px;
+  font-size: clamp(15px, 1.7vw, var(--lf-sub-size, 25px));
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.lf-subtitle-translation {
+  min-height: 1.3em;
+  font-size: clamp(18px, 2.1vw, 30px);
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.lf-subtitle-translation.lf-pending {
+  opacity: 0.42;
+  font-size: clamp(13px, 1.45vw, 18px);
+  font-weight: 400;
+}
+
+.lf-subtitle-toolbar .lf-btn,
+.lf-subtitle-toolbar .lf-select {
+  flex: 0 0 auto;
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.lf-subtitle-toolbar .lf-btn:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.42);
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .lf-select {
@@ -325,6 +372,20 @@
   border-radius: 8px;
   padding: 3px 6px;
   font-size: 12.5px;
+}
+
+@media (hover: none) {
+  .lf-subtitle-panel:not(.lf-controls-pinned) .lf-subtitle-toolbar {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lf-subtitle-toolbar {
+    transition: none;
+  }
 }
 
 /* ---------- transcript (lyrics) panel ---------- */
