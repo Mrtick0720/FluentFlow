@@ -129,6 +129,23 @@ export function isOccluded(el: HTMLElement): boolean {
   return tested > 0; // tested in-viewport points, owned none → covered
 }
 
+/** Ancestors (up to 6 levels) that clip their content (overflow hidden/clip). */
+export function clippingAncestors(el: HTMLElement): HTMLElement[] {
+  const out: HTMLElement[] = [];
+  let node = el.parentElement;
+  for (let depth = 0; node && depth < 6; depth++) {
+    const s = getComputedStyle(node);
+    if (/hidden|clip/.test(s.overflowX) || /hidden|clip/.test(s.overflowY)) out.push(node);
+    node = node.parentElement;
+  }
+  return out;
+}
+
+/** Does this box's content overflow its clipped bounds? */
+export function overflows(el: HTMLElement): boolean {
+  return el.scrollHeight > el.clientHeight + 2 || el.scrollWidth > el.clientWidth + 2;
+}
+
 /**
  * Layout-sensitive elements (navigation, controls, short labels, absolutely
  * positioned bits) should be translated in place (original hidden, no added

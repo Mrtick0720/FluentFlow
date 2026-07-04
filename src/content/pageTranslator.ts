@@ -2,9 +2,11 @@ import { ATTR_TRANSLATED } from '@/shared/constants';
 import type { DisplayMode } from '@/types/models';
 import { debounce } from '@/utils/async';
 import {
+  clippingAncestors,
   collectTranslatableBlocks,
   isOccluded,
   looksLikeTargetLanguage,
+  overflows,
   shouldReplaceInPlace,
 } from '@/utils/dom';
 
@@ -140,13 +142,25 @@ export class PageTranslator {
       const texts = batch.map((el) => (el.textContent ?? '').replace(/\s+/g, ' ').trim());
       const translations = await this.opts.translate(texts);
       if (!this.active) return;
+      let applied = 0;
       this.withSelfMutation(() => {
         batch.forEach((el, i) => {
           const translation = translations[i];
-          if (translation && el.isConnected) this.applyTranslation(el, translation);
+          if (!translation || !el.isConnected) return;
+          // Layout guard: if translating overflows a previously-fitting clipped
+          // container (menus, cards, ellipsis boxes), revert — better to leave
+          // it untranslated than to break the layout / overlap the page.
+          const clips = clippingAncestors(el);
+          const before = clips.map(overflows);
+          this.applyTranslation(el, translation);
+          if (clips.some((a, j) => !before[j] && overflows(a))) {
+            this.revertTranslation(el);
+          } else {
+            applied++;
+          }
         });
       });
-      this.doneCount += batch.length;
+      this.doneCount += applied;
       this.opts.onProgress?.(this.doneCount, this.totalCount);
     } catch (err) {
       // Re-queue so a later scroll retries; surface the error once.
@@ -156,6 +170,18 @@ export class PageTranslator {
       batch.forEach((el) => this.inflight.delete(el));
       if (this.queue.size > 0) this.flushSoon();
     }
+  }
+
+  /** Undo a single element's translation (layout guard rejected it). */
+  private revertTranslation(el: HTMLElement): void {
+    const original = el.querySelector(':scope > .lf-original');
+    el.querySelector(':scope > .lf-trans')?.remove();
+    if (original) {
+      while (original.firstChild) el.insertBefore(original.firstChild, original);
+      original.remove();
+    }
+    el.removeAttribute(ATTR_TRANSLATED);
+    el.classList.remove('lf-replaced');
   }
 
   private applyTranslation(el: HTMLElement, translation: string): void {
