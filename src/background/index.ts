@@ -108,6 +108,19 @@ const router = new MessageRouter()
     const url = chrome.runtime.getURL(`options.html${hash ? `#${hash}` : ''}`);
     await chrome.tabs.create({ url });
     return null;
+  })
+  .on('action.setBadge', async ({ active }, sender) => {
+    const tabId = sender.tab?.id;
+    if (tabId === undefined) return null;
+    try {
+      await chrome.action.setBadgeText({ tabId, text: active ? '✓' : '' });
+      if (active) {
+        await chrome.action.setBadgeBackgroundColor({ tabId, color: '#22c55e' });
+      }
+    } catch {
+      // tab closed
+    }
+    return null;
   });
 
 router.listen();

@@ -69,6 +69,8 @@ export interface RequestMap {
   'permissions.requestOrigin': { req: { origin: string }; res: { granted: boolean } };
   'sidepanel.open': { req: null; res: null };
   'options.open': { req: { hash?: string }; res: null };
+  /** Show/hide the green "translating" badge on the toolbar icon (per tab). */
+  'action.setBadge': { req: { active: boolean }; res: null };
 }
 
 /** Messages the background sends to a tab's content script. */

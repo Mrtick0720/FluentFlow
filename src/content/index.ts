@@ -85,6 +85,8 @@ async function main() {
       translator.start();
       uiStore.set({ pageActive: true });
     }
+    // Green toolbar badge while this tab is being translated.
+    void sendRequest('action.setBadge', { active: translator.active }).catch(() => {});
   }
 
   /* ---------- subtitle learning ---------- */
