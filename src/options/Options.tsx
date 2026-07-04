@@ -248,17 +248,17 @@ export function Options() {
             ))}
           </Select>
         </Field>
-        <div className="grid grid-cols-3 gap-3">
-          <Field label="自定义端点 Base URL" hint="OpenAI 兼容，需带 /v1，如 https://free.v36.cm/v1">
-            <SavedInput
-              value={settings.providers.custom?.baseUrl ?? ''}
-              placeholder="https://…/v1"
-              onSave={async (v) => {
-                setProvider('custom', { baseUrl: v });
-                if (v) flash((await grantOrigin(v)) ? '已保存并授权访问该端点' : '已保存（未授权，可能无法访问）');
-              }}
-            />
-          </Field>
+        <Field label="自定义端点 Base URL" hint="OpenAI 兼容，需带 /v1，如 https://free.v36.cm/v1">
+          <SavedInput
+            value={settings.providers.custom?.baseUrl ?? ''}
+            placeholder="https://…/v1"
+            onSave={async (v) => {
+              setProvider('custom', { baseUrl: v });
+              if (v) flash((await grantOrigin(v)) ? '已保存并授权访问该端点' : '已保存（未授权，可能无法访问）');
+            }}
+          />
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
           <Field label="模型" hint="API 模型 ID（小写连字符）。可点「拉取」从端点获取列表">
             <ModelPicker
               value={settings.providers.custom?.model ?? ''}
@@ -554,10 +554,13 @@ function ModelPicker({
   const [status, setStatus] = useState<'idle' | 'loading' | 'err'>('idle');
   const [err, setErr] = useState('');
   return (
-    <div className="space-y-1">
-      <div className="flex gap-2">
-        <SavedInput value={value} placeholder="如 gemini-2.5-flash" onSave={(v) => onSave(v.trim())} />
+    <div className="space-y-1.5">
+      <div className="flex items-stretch gap-2">
+        <div className="min-w-0 flex-1">
+          <SavedInput value={value} placeholder="如 gemini-2.5-flash" onSave={(v) => onSave(v.trim())} />
+        </div>
         <Button
+          className="shrink-0 whitespace-nowrap"
           disabled={status === 'loading'}
           onClick={async () => {
             setStatus('loading');
