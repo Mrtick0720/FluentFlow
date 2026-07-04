@@ -29,6 +29,8 @@ export interface SubtitleControllerDeps {
 }
 
 const LIVE_SKIP_SECONDS = 5;
+/** Show a track-mode line slightly early to offset render/paint latency. */
+const SUBTITLE_LEAD_SECONDS = 0.15;
 
 /**
  * Drives subtitle playback features on top of a VideoAdapter: bilingual
@@ -187,6 +189,18 @@ export class SubtitleController {
       const onTime = () => this.syncTrackMode();
       this.video.addEventListener('timeupdate', onTime);
       this.cleanup.push(() => this.video?.removeEventListener('timeupdate', onTime));
+      // `timeupdate` only fires ~4x/sec, so subtitles can lag the audio by up
+      // to ~250ms. Additionally poll via requestAnimationFrame so the line
+      // switches within a frame of the word's timestamp.
+      if (typeof requestAnimationFrame === 'function') {
+        let rafId = 0;
+        const tick = () => {
+          this.syncTrackMode();
+          rafId = requestAnimationFrame(tick);
+        };
+        rafId = requestAnimationFrame(tick);
+        this.cleanup.push(() => cancelAnimationFrame(rafId));
+      }
     } else {
       // Live mode: follow whatever caption the page displays.
       const unsubscribe = this.adapter.onCaptionChanged((c) => this.onLiveCaption(c));
@@ -391,7 +405,9 @@ export class SubtitleController {
       }
       return;
     }
-    const t = this.video.currentTime;
+    // Small lead so the line switches a touch before the word, cancelling
+    // React render + paint latency (feels in sync rather than a beat late).
+    const t = this.video.currentTime + SUBTITLE_LEAD_SECONDS;
 
     if (this.abLoop && Number.isFinite(this.abLoop.b) && t >= this.abLoop.b) {
       this.adapter?.seek(this.abLoop.a + 0.01);
