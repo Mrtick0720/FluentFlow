@@ -177,6 +177,19 @@
   color: #fff;
 }
 
+/* Brand FAB: the logo image fills the round button. */
+.lf-fab-brand {
+  padding: 0;
+  overflow: hidden;
+}
+
+.lf-fab-brand img {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: block;
+}
+
 .lf-fab-progress {
   font-size: 10px;
   color: var(--lf-fg-soft);

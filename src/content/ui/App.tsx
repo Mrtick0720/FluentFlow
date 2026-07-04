@@ -246,12 +246,12 @@ function FabStack({ ui, actions }: { ui: UIState; actions: UIActions }) {
         ☰
       </button>
       <button
-        className={`lf-fab ${ui.pageActive ? 'lf-active' : ''}`}
+        className={`lf-fab lf-fab-brand ${ui.pageActive ? 'lf-active' : ''}`}
         onClick={actions.togglePage}
         title="翻译/还原整页 (Alt+T)"
         aria-label="翻译或还原整页"
       >
-        译
+        <img src={chrome.runtime.getURL('icons/icon48.png')} alt="" />
       </button>
     </div>
   );
