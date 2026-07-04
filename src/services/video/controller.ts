@@ -62,6 +62,45 @@ export function isRelatedCaption(prev: string, next: string): boolean {
   return mergeCaptions(prev, next) !== null;
 }
 
+const CLAUSE_CONJUNCTION =
+  /\s+(and|but|so|or|because|which|that|when|while|then|where|although)\s+/gi;
+
+/**
+ * Where to break a live-caption buffer into a displayable line.
+ * Returns null while the buffer should keep growing.
+ */
+export function findLiveSplit(
+  text: string,
+  softChars: number,
+  hardChars: number,
+): { completed: string; rest: string } | null {
+  // 1) Finished sentence(s): break after the last terminator.
+  const sentence = text.match(/^([\s\S]*[.!?…]["')\]]?)\s+(\S[\s\S]*)$/);
+  if (sentence) return { completed: sentence[1]!.trim(), rest: sentence[2]!.trim() };
+  if (text.length <= softChars) return null;
+
+  // 2) Clause boundary: last comma/semicolon/colon, else last conjunction.
+  let cut = -1;
+  const punct = text.match(/^([\s\S]*[,;:，；：])\s+\S[\s\S]*$/);
+  if (punct) cut = punct[1]!.length;
+  if (cut < 30) {
+    for (const m of text.matchAll(CLAUSE_CONJUNCTION)) {
+      if (m.index !== undefined && m.index >= 30) cut = Math.max(cut, m.index);
+    }
+  }
+  if (cut >= 30 && text.length - cut >= 8) {
+    return { completed: text.slice(0, cut).trim(), rest: text.slice(cut).trim() };
+  }
+
+  // 3) Hard cap: last word boundary before the limit.
+  if (text.length > hardChars) {
+    const space = text.lastIndexOf(' ', hardChars);
+    if (space > 40) return { completed: text.slice(0, space).trim(), rest: text.slice(space + 1).trim() };
+    return { completed: text.trim(), rest: '' };
+  }
+  return null;
+}
+
 export class SubtitleController {
   private adapter: VideoAdapter | null = null;
   private video: HTMLVideoElement | null = null;
@@ -463,31 +502,38 @@ export class SubtitleController {
     }
   }
 
-  /** Buffer cap for punctuation-less caption streams. */
-  private static readonly LIVE_MAX_BUFFER_CHARS = 220;
+  /** Comfortable subtitle length; look for a clause break past this point. */
+  private static readonly LIVE_SOFT_CHARS = 110;
+  /** Hard cap for clause-less streams; split at a word boundary here. */
+  private static readonly LIVE_MAX_BUFFER_CHARS = 160;
 
   /**
-   * If the buffer already contains finished sentences ("… better. Closing
-   * the"), display the finished part now and keep only the tail buffering.
+   * Display the finished part of the buffer and keep only the tail:
+   * 1) full sentences (terminator followed by more words);
+   * 2) past the soft cap, clause boundaries — a comma/semicolon or a
+   *    conjunction (and/but/so/which/because…) — so run-on ASR speech
+   *    still breaks into readable lines;
+   * 3) past the hard cap, the last word boundary.
    */
   private splitCompletedLiveSentences(): void {
     const sentence = this.liveSentence;
     if (!sentence) return;
-    const match = sentence.text.match(/^([\s\S]*[.!?…]["')\]]?)\s+(\S[\s\S]*)$/);
-    if (match) {
-      const completed = match[1]!.trim();
-      const rest = match[2]!.trim();
-      this.displayLiveSentence(completed, sentence.start, sentence);
-      if (this.autoPause) this.video?.pause();
-      this.liveSentence = {
-        text: rest,
-        start: this.video?.currentTime ?? sentence.start,
-        translation: '',
-        translatedText: '',
-      };
-    } else if (sentence.text.length > SubtitleController.LIVE_MAX_BUFFER_CHARS) {
-      this.finalizeLiveSentence();
-    }
+    const split = findLiveSplit(
+      sentence.text,
+      SubtitleController.LIVE_SOFT_CHARS,
+      SubtitleController.LIVE_MAX_BUFFER_CHARS,
+    );
+    if (!split) return;
+    this.displayLiveSentence(split.completed, sentence.start, sentence);
+    if (this.autoPause) this.video?.pause();
+    this.liveSentence = split.rest
+      ? {
+          text: split.rest,
+          start: this.video?.currentTime ?? sentence.start,
+          translation: '',
+          translatedText: '',
+        }
+      : null;
   }
 
   /** Sentence completed: show English + best-available Chinese together. */

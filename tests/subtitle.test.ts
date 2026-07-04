@@ -221,18 +221,34 @@ describe('SubtitleController live captions (whole-sentence mode)', () => {
     expect(latest(harness.states).original).toBe('And now more');
   });
 
-  it('caps a punctuation-less buffer instead of growing forever', async () => {
+  it('caps a punctuation-less buffer at a word boundary instead of growing forever', async () => {
     vi.useFakeTimers();
     const harness = liveHarness(async ([text]) => [`译：${text}`]);
     await harness.controller.attach('https://example.com/video');
 
     let text = 'word';
-    while (text.length <= 230) {
+    while (text.length <= 200) {
       text += ' word';
       harness.emit({ text });
     }
-    // Once past the cap the buffer is flushed to the panel without any gap.
-    expect(latest(harness.states).original.length).toBeGreaterThan(200);
+    const shown = latest(harness.states).original;
+    expect(shown.length).toBeGreaterThan(100);
+    expect(shown.length).toBeLessThanOrEqual(160);
+  });
+
+  it('breaks run-on speech at clause boundaries past the soft cap', async () => {
+    vi.useFakeTimers();
+    const harness = liveHarness(async ([text]) => [`译：${text}`]);
+    await harness.controller.attach('https://example.com/video');
+
+    const runOn =
+      'You know, we we together provides a secure compliant uh all US-hosted ' +
+      'infrastructure for serving these models, and all our customers do typically';
+    harness.emit({ text: runOn });
+    const shown = latest(harness.states).original;
+    // Split at the last comma — not held until a period or the hard cap.
+    expect(shown.endsWith('models,')).toBe(true);
+    expect(shown.length).toBeLessThan(130);
   });
 
   it('clears the panel after a long silence', async () => {

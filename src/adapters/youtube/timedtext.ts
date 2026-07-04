@@ -123,13 +123,18 @@ interface Json3Event {
   segs?: Array<{ utf8?: string; tOffsetMs?: number }>;
 }
 
-const MAX_SENTENCE_CHARS = 180;
+const MAX_SENTENCE_CHARS = 160;
+const SOFT_SENTENCE_CHARS = 110;
 const SENTENCE_GAP_MS = 2000;
 const SENTENCE_END = /[.!?…]["')\]]?$/;
+const CLAUSE_PUNCT_END = /[,;:，；：]$/;
+const CLAUSE_CONJUNCTION = /^(and|but|so|or|because|which|that|when|while|then|where|although)$/i;
 
 /**
  * Turn the word/line stream of a json3 timedtext document into sentences:
- * break on end punctuation, long pauses, or excessive length.
+ * break on end punctuation, long pauses, or excessive length. Past a soft
+ * length cap, clause boundaries (comma / conjunction) also break, so
+ * punctuation-light ASR speech still yields readable lines.
  */
 export function segmentsFromTimedText(data: { events?: Json3Event[] }): SubtitleSegment[] {
   const words: Array<{ text: string; startMs: number }> = [];
@@ -167,10 +172,15 @@ export function segmentsFromTimedText(data: { events?: Json3Event[] }): Subtitle
     current.parts.push(word.text);
 
     const gapMs = next ? next.startMs - word.startMs : Number.POSITIVE_INFINITY;
+    const length = current.parts.join(' ').length;
+    const clauseBreak =
+      length > SOFT_SENTENCE_CHARS &&
+      (CLAUSE_PUNCT_END.test(word.text) || (next !== undefined && CLAUSE_CONJUNCTION.test(next.text)));
     const shouldBreak =
       SENTENCE_END.test(word.text) ||
       gapMs > SENTENCE_GAP_MS ||
-      current.parts.join(' ').length > MAX_SENTENCE_CHARS;
+      length > MAX_SENTENCE_CHARS ||
+      clauseBreak;
     if (shouldBreak) {
       flush(next ? Math.min(next.startMs, word.startMs + SENTENCE_GAP_MS) : word.startMs + SENTENCE_GAP_MS);
     }
