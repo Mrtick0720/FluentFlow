@@ -146,6 +146,26 @@ export function overflows(el: HTMLElement): boolean {
   return el.scrollHeight > el.clientHeight + 2 || el.scrollWidth > el.clientWidth + 2;
 }
 
+/** A pure, testable snapshot of an element's layout safety at a point in time. */
+export interface LayoutSnapshot {
+  selfOverflow: boolean;
+  clippingOverflow: boolean[];
+  siblingOverlaps: boolean[];
+}
+
+function newlyTrue(before: boolean[], after: boolean[]): boolean {
+  return after.some((value, index) => value && !before[index]);
+}
+
+/** Did applying a translation newly break the element's box, a clipping ancestor, or a neighbour? */
+export function introducesUnsafeLayout(before: LayoutSnapshot, after: LayoutSnapshot): boolean {
+  return (
+    (after.selfOverflow && !before.selfOverflow) ||
+    newlyTrue(before.clippingOverflow, after.clippingOverflow) ||
+    newlyTrue(before.siblingOverlaps, after.siblingOverlaps)
+  );
+}
+
 /**
  * Layout-sensitive elements (navigation, controls, short labels, absolutely
  * positioned bits) should be translated in place (original hidden, no added
