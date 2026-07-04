@@ -5,7 +5,12 @@ import {
   type CaptionState,
   type VideoAdapter,
 } from '@/services/video/adapter';
-import { SubtitleController, type SubtitleViewState } from '@/services/video/controller';
+import {
+  isRelatedCaption,
+  mergeCaptions,
+  SubtitleController,
+  type SubtitleViewState,
+} from '@/services/video/controller';
 import { chooseCaptionText, normalizeCaptionText } from '@/adapters/youtube';
 
 const SAMPLE_VTT = `WEBVTT
@@ -171,7 +176,7 @@ describe('SubtitleController live captions', () => {
     expect(requests).toEqual(['I am thrilled', 'I am thrilled we get to', 'Second sentence']);
   });
 
-  it('never applies an out-of-order translation to a newer English caption', async () => {
+  it('fills the spinner with a stale result, then corrects it with the next one', async () => {
     vi.useFakeTimers();
     const first = deferred<string[]>();
     const second = deferred<string[]>();
@@ -184,14 +189,14 @@ describe('SubtitleController live captions', () => {
 
     harness.emit({ text: 'First' });
     await vi.advanceTimersByTimeAsync(200); // request 1 in flight
-    harness.emit({ text: 'Second' }); // queued behind it
+    harness.emit({ text: 'Second' }); // unrelated → spinner, queued behind it
     first.resolve(['旧中文']);
     await vi.advanceTimersByTimeAsync(0);
-    // The stale result for 'First' must not be applied to 'Second'.
+    // Policy: a slightly stale translation beats an endless spinner.
     expect(latest(harness.states)).toMatchObject({
       original: 'Second',
-      translation: '',
-      translating: true,
+      translation: '旧中文',
+      translating: false,
     });
 
     await vi.advanceTimersByTimeAsync(200); // politeness gap → request 2
@@ -253,6 +258,78 @@ describe('SubtitleController live captions', () => {
       translation: '',
       translating: false,
     });
+  });
+});
+
+describe('mergeCaptions / isRelatedCaption', () => {
+  it('recognizes growth and prefix truncation', () => {
+    expect(mergeCaptions('Hello', 'Hello world')).toBe('Hello world');
+    expect(mergeCaptions('Hello world', 'Hello')).toBe('Hello world');
+  });
+
+  it('stitches rolling windows on word overlap', () => {
+    expect(mergeCaptions('a much speculated about', 'much speculated about project')).toBe(
+      'a much speculated about project',
+    );
+    expect(isRelatedCaption('we get to do this', 'get to do this in the')).toBe(true);
+  });
+
+  it('rejects unrelated sentences and empty input', () => {
+    expect(mergeCaptions('First sentence here', 'Totally different words')).toBeNull();
+    expect(mergeCaptions('', 'anything')).toBeNull();
+    expect(isRelatedCaption('one two', 'three four')).toBe(false);
+  });
+});
+
+describe('SubtitleController rolling captions', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('keeps translations flowing while the caption window rolls', async () => {
+    vi.useFakeTimers();
+    const harness = liveHarness(async ([text]) => [`译：${text}`]);
+    await harness.controller.attach('https://example.com/video');
+
+    harness.emit({ text: 'a much speculated about' });
+    await vi.advanceTimersByTimeAsync(120);
+    expect(latest(harness.states).translation).toBe('译：a much speculated about');
+
+    // Window rolls: leading word drops off. Must be treated as the same
+    // sentence — translation stays visible and then refreshes; the panel must
+    // never fall back into a permanent "翻译中…" state.
+    harness.emit({ text: 'much speculated about project' });
+    expect(latest(harness.states)).toMatchObject({
+      original: 'much speculated about project',
+      translation: '译：a much speculated about',
+      translating: false,
+    });
+    await vi.advanceTimersByTimeAsync(200);
+    expect(latest(harness.states).translation).toBe('译：much speculated about project');
+  });
+
+  it('applies a slightly stale result rather than showing an endless spinner', async () => {
+    vi.useFakeTimers();
+    const first = deferred<string[]>();
+    const translate = vi
+      .fn<(texts: string[]) => Promise<string[]>>()
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValue(['译：当前']);
+    const harness = liveHarness(translate);
+    await harness.controller.attach('https://example.com/video');
+
+    harness.emit({ text: 'First sentence' });
+    await vi.advanceTimersByTimeAsync(200); // request 1 in flight
+    harness.emit({ text: 'Unrelated new words' }); // spinner state, queued
+    first.resolve(['译：第一句']);
+    await vi.advanceTimersByTimeAsync(0);
+    // Stale but applied: better than a stuck spinner; next request corrects it.
+    expect(latest(harness.states)).toMatchObject({
+      translation: '译：第一句',
+      translating: false,
+    });
+    await vi.advanceTimersByTimeAsync(200);
+    expect(latest(harness.states).translation).toBe('译：当前');
   });
 });
 

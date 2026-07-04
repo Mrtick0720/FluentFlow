@@ -34,6 +34,34 @@ const LIVE_SKIP_SECONDS = 5;
  * Drives subtitle playback features on top of a VideoAdapter: bilingual
  * captions, sentence repeat, A-B loop, prev/next, speed, bookmarking.
  */
+
+/**
+ * Merge two live-caption snapshots of the same sentence, or return null if
+ * they are unrelated. Handles growth ("Hello" → "Hello world") and rolling
+ * windows where leading words scroll off ("a much speculated about" →
+ * "much speculated about project"): the word-suffix of the older text must
+ * match a word-prefix of the newer one (≥2 words).
+ */
+export function mergeCaptions(prev: string, next: string): string | null {
+  if (!prev || !next) return null;
+  if (next.startsWith(prev)) return next;
+  if (prev.startsWith(next)) return prev;
+  const a = prev.split(/\s+/).filter(Boolean);
+  const b = next.split(/\s+/).filter(Boolean);
+  for (let k = Math.min(a.length, b.length); k >= 2; k--) {
+    if (
+      a.slice(a.length - k).join(' ').toLowerCase() === b.slice(0, k).join(' ').toLowerCase()
+    ) {
+      return [...a, ...b.slice(k)].join(' ');
+    }
+  }
+  return null;
+}
+
+export function isRelatedCaption(prev: string, next: string): boolean {
+  return mergeCaptions(prev, next) !== null;
+}
+
 export class SubtitleController {
   private adapter: VideoAdapter | null = null;
   private video: HTMLVideoElement | null = null;
@@ -351,10 +379,9 @@ export class SubtitleController {
       return;
     }
 
-    const isContinuation = prev !== '' && (text.startsWith(prev) || prev.startsWith(text));
     this.setState(
-      isContinuation
-        ? { original: text } // keep the partial translation while it refines
+      isRelatedCaption(prev, text)
+        ? { original: text } // same sentence (grown or rolled): keep the partial translation
         : { original: text, translation: '', translating: true },
     );
     this.livePending = { text, start: caption?.start ?? this.video?.currentTime ?? 0 };
@@ -376,26 +403,34 @@ export class SubtitleController {
     this.livePending = null;
     this.liveInflight = true;
     const seq = ++this.liveSeq;
+    let watchdog: ReturnType<typeof setTimeout> | undefined;
     try {
-      const [translation] = await this.deps.translate([text]);
-      // Apply unless a newer result already landed, we detached, or the
-      // caption moved on to an unrelated sentence. A translation of a prefix
-      // of the current caption is still worth showing.
-      const related =
-        this.lastLiveText === text ||
-        this.lastLiveText.startsWith(text) ||
-        text.startsWith(this.lastLiveText);
-      if (seq > this.liveAppliedSeq && related) {
+      // Watchdog: a request that never settles must not stall the pipeline.
+      const translation = await Promise.race([
+        this.deps.translate([text]).then((r) => r[0] ?? ''),
+        new Promise<never>((_, reject) => {
+          watchdog = setTimeout(() => reject(new Error('live translate timeout')), 8000);
+        }),
+      ]);
+      // Apply unless a newer result already landed or we detached. Showing a
+      // ~300ms-stale translation beats an endless "翻译中…" — if the caption
+      // already moved to an unrelated sentence AND something is on screen,
+      // skip; otherwise apply and let the next request correct it.
+      const related = isRelatedCaption(this.lastLiveText, text);
+      const nothingShown = this.state.translating || !this.state.translation;
+      if (seq > this.liveAppliedSeq && this.lastLiveText !== '' && (related || nothingShown)) {
         this.liveAppliedSeq = seq;
-        this.setState({ translation: translation ?? '', translating: false });
+        this.setState({ translation, translating: false });
       }
-      if (this.adapter) this.appendLiveHistory(text, translation ?? '', start);
+      if (this.adapter) this.appendLiveHistory(text, translation, start);
     } catch {
-      // Keep whatever is shown; the next caption tick retries.
-      if (seq > this.liveAppliedSeq && this.lastLiveText === text) {
+      // Drop the spinner so a failing provider degrades to "original only";
+      // the next caption tick retries.
+      if (seq > this.liveAppliedSeq) {
         this.setState({ translating: false });
       }
     } finally {
+      clearTimeout(watchdog);
       this.liveInflight = false;
       // Politeness gap between successive requests while speech continues.
       if (this.livePending) this.schedulePump(200);
@@ -408,8 +443,9 @@ export class SubtitleController {
    */
   private appendLiveHistory(text: string, translation: string, start: number): void {
     const last = this.liveHistory[this.liveHistory.length - 1];
-    if (last && (text.startsWith(last.text) || last.text.startsWith(text))) {
-      last.text = text.length > last.text.length ? text : last.text;
+    const merged = last ? mergeCaptions(last.text, text) : null;
+    if (last && merged !== null) {
+      last.text = merged;
       last.translation = translation;
     } else if (!last || last.text !== text) {
       this.liveHistory.push({
