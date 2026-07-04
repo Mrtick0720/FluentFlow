@@ -1,4 +1,5 @@
 import { GenericHtml5Adapter } from '@/adapters/generic';
+import { fetchYouTubeTranscript } from '@/adapters/youtube/timedtext';
 import type { CaptionState } from '@/services/video/adapter';
 import type { SubtitleTrack } from '@/types/models';
 
@@ -52,7 +53,15 @@ export class YouTubeAdapter extends GenericHtml5Adapter {
   }
 
   override async getSubtitleTracks(): Promise<SubtitleTrack[]> {
-    // Native cues are usually unavailable; fall back to live caption mode.
+    // Best case: the full transcript the player itself downloads (public
+    // timedtext data, works for auto-generated tracks too). Falls back to
+    // native cues, then to live caption mirroring.
+    try {
+      const transcript = await fetchYouTubeTranscript();
+      if (transcript.length > 0) return transcript;
+    } catch {
+      // fall through to the generic paths
+    }
     return super.getSubtitleTracks();
   }
 

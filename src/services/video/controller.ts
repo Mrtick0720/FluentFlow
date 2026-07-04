@@ -117,6 +117,9 @@ export class SubtitleController {
     this.tracks = await this.adapter.getSubtitleTracks();
     const trackInfos = this.tracks.map((t) => ({ id: t.id, label: t.label, language: t.language }));
 
+    // Our panel replaces the player's caption display in both modes.
+    if (this.adapter.hideNativeCaptions) this.cleanup.push(this.adapter.hideNativeCaptions());
+
     if (this.tracks.length > 0) {
       this.selectTrack(this.tracks[0]!.id);
       this.setState({ status: 'ready', mode: 'track', tracks: trackInfos });
@@ -127,8 +130,6 @@ export class SubtitleController {
       // Live mode: follow whatever caption the page displays.
       const unsubscribe = this.adapter.onCaptionChanged((c) => this.onLiveCaption(c));
       this.cleanup.push(unsubscribe);
-      // Our panel mirrors the caption — hide the player's own display.
-      if (this.adapter.hideNativeCaptions) this.cleanup.push(this.adapter.hideNativeCaptions());
       const initial = this.adapter.getCurrentCaption();
       this.setState({ status: 'ready', mode: 'live', tracks: [] });
       this.deps.onTranscript?.([]);
@@ -152,6 +153,7 @@ export class SubtitleController {
     this.liveSentence = null;
     this.lastLiveText = '';
     this.liveHistory = [];
+    this.translateGeneration++;
     // Invalidate any in-flight live translation.
     this.liveSeq++;
     this.liveAppliedSeq = this.liveSeq;
@@ -182,6 +184,39 @@ export class SubtitleController {
     this.setState({ activeTrackId: trackId, total: this.segments.length });
     this.emitTranscript();
     this.syncTrackMode(true);
+    void this.translateAllInBackground();
+  }
+
+  /**
+   * Fill the whole transcript with translations in polite chunks so the
+   * lyrics list is fully bilingual without waiting for playback to reach
+   * each line. Cancelled by detach or a track switch.
+   */
+  private translateGeneration = 0;
+
+  private async translateAllInBackground(): Promise<void> {
+    const generation = ++this.translateGeneration;
+    const CHUNK = 20;
+    for (let i = 0; i < this.segments.length; i += CHUNK) {
+      if (generation !== this.translateGeneration) return;
+      const chunk = this.segments.slice(i, i + CHUNK).filter((s) => s.translation === undefined);
+      if (chunk.length === 0) continue;
+      try {
+        const translations = await this.deps.translate(chunk.map((s) => s.text));
+        if (generation !== this.translateGeneration) return;
+        chunk.forEach((s, j) => {
+          s.translation = translations[j] ?? '';
+        });
+        this.emitTranscript();
+        const current = this.segments[this.index];
+        if (current?.translation !== undefined && this.state.translation === '') {
+          this.setState({ translation: current.translation, translating: false });
+        }
+      } catch {
+        return; // stop the background fill; the on-demand path still works
+      }
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    }
   }
 
   setAutoPause(on: boolean): void {
