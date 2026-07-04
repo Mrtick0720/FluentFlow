@@ -6,9 +6,26 @@ import path from 'node:path';
 const DIST = path.resolve(process.cwd(), 'dist');
 
 const FIXTURE_HTML = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>Fixture Article</title></head>
+<html lang="en"><head><meta charset="utf-8"><title>Fixture Article</title>
+<style>
+  nav { align-items: center; background: #000; color: #fff; display: flex; height: 55px; }
+  nav > a { display: flex; height: 44px; width: 22px; }
+  nav img { height: 44px; width: 22px; }
+  nav ul { align-items: stretch; display: flex; height: 55px; list-style: none; margin: 0; }
+  nav li { align-items: center; display: flex; height: 55px; margin: 0 8px; white-space: nowrap; }
+  nav li > a { align-items: center; display: flex; height: 55px; }
+  .dropdown { position: absolute; visibility: hidden; }
+</style></head>
 <body>
-  <nav><ul><li>World news today here</li></ul></nav>
+  <nav>
+    <a id="nba-logo" href="/"><img alt="NBA Logo"></a>
+    <ul>
+      <li id="summer"><a href="/summer"><span id="summer-label">Summer League</span></a></li>
+      <li id="teams"><a href="/teams"><span id="teams-label">Teams</span></a>
+        <div id="teams-dropdown" class="dropdown">Atlantic Boston Celtics Brooklyn Nets New York Knicks Philadelphia 76ers Toronto Raptors</div>
+      </li>
+    </ul>
+  </nav>
   <section class="hero">
     <p id="hero">Breaking coverage of the summer league finals tonight</p>
   </section>
@@ -47,7 +64,13 @@ function startServer(): Promise<{ server: http.Server; port: number }> {
         const parsed = JSON.parse(body) as { messages: Array<{ role: string; content: string }> };
         const userMsg = parsed.messages.findLast((m) => m.role === 'user')!;
         const texts = JSON.parse(userMsg.content) as string[];
-        const content = JSON.stringify({ translations: texts.map((t) => `译文：${t}`) });
+        const labels: Record<string, string> = {
+          'Summer League': '夏季联赛',
+          Teams: '球队',
+        };
+        const content = JSON.stringify({
+          translations: texts.map((t) => labels[t] ?? `译文：${t}`),
+        });
         res.writeHead(200, { 'Content-Type': 'application/json', ...cors });
         res.end(
           JSON.stringify({ choices: [{ message: { role: 'assistant', content } }] }),
@@ -99,6 +122,9 @@ test('loads the extension and translates a page end-to-end', async () => {
     page.on('pageerror', (e) => pageErrors.push(e.message));
     await page.goto(`http://127.0.0.1:${port}/`);
     await page.waitForSelector('#lf-host', { state: 'attached' });
+    const logoTopBefore = await page.locator('#nba-logo').evaluate((el) =>
+      el.getBoundingClientRect().top,
+    );
     // The content script must not throw at startup on a page with a video.
     expect(pageErrors, pageErrors.join('\n')).toEqual([]);
 
@@ -126,8 +152,27 @@ test('loads the extension and translates a page end-to-end', async () => {
     // Hero content is translated in place (original hidden, no added block).
     await expect(page.locator('#hero.lf-replaced')).toHaveCount(1);
     await expect(page.locator('#hero .lf-original')).toBeHidden();
-    // Nav item is translated in place too.
-    await expect(page.locator('nav li.lf-replaced')).toHaveCount(1);
+    // NBA-style navigation translates only the visible labels. Wrapping the
+    // whole <li> would hide its anchor/dropdown structure and expose a merged
+    // translation of every team name.
+    await expect(page.locator('#summer-label.lf-replaced')).toHaveCount(1);
+    await expect(page.locator('#teams-label.lf-replaced')).toHaveCount(1);
+    await expect(page.locator('#summer.lf-replaced, #teams.lf-replaced')).toHaveCount(0);
+    await expect(page.locator('#teams-dropdown')).toBeHidden();
+    await expect(page.locator('#teams')).not.toContainText('译文：TeamsAtlantic');
+
+    // In-place labels preserve the host nav's single-line geometry and do not
+    // move the adjacent NBA logo.
+    const summerLines = await page.locator('#summer-label').evaluate((el) => {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      return range.getClientRects().length;
+    });
+    expect(summerLines).toBe(1);
+    const logoTopAfter = await page.locator('#nba-logo').evaluate((el) =>
+      el.getBoundingClientRect().top,
+    );
+    expect(logoTopAfter).toBe(logoTopBefore);
   } finally {
     await context.close();
     server.close();

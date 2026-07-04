@@ -17,6 +17,10 @@ const CANDIDATE_SELECTOR = [
   'summary',
   'td',
   'th',
+  // Navigation items often keep hidden dropdown/mega-menu content inside the
+  // same <li>. Translate the visible label leaf, never the structural <li>.
+  'nav a > span',
+  'nav button > span',
 ].join(',');
 
 const SKIP_CLOSEST = [
