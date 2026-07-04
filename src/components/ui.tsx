@@ -76,9 +76,9 @@ export function Switch({
   );
 }
 
-export function Section({ title, children }: { title: string; children: ReactNode }) {
+export function Section({ id, title, children }: { id?: string; title: string; children: ReactNode }) {
   return (
-    <section className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+    <section id={id} className="scroll-mt-4 rounded-xl border border-slate-200 p-4 dark:border-slate-700">
       <h2 className="mb-3 text-sm font-semibold">{title}</h2>
       <div className="space-y-3">{children}</div>
     </section>

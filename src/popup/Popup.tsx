@@ -6,13 +6,55 @@ import { COMMON_LANGUAGES } from '@/shared/constants';
 import { sendRequest, sendToTab } from '@/shared/messages';
 import type { DisplayMode, StatsSnapshot, TranslationProviderId } from '@/types/models';
 
-const PROVIDERS: Array<{ value: TranslationProviderId; label: string; icon: string }> = [
-  { value: 'google', label: '谷歌翻译（免费）', icon: '🌐' },
-  { value: 'deepl', label: 'DeepL', icon: '🇩🇪' },
-  { value: 'openai', label: 'OpenAI', icon: '🤖' },
-  { value: 'azure', label: 'Azure', icon: '☁️' },
-  { value: 'custom', label: '自定义端点', icon: '⚙️' },
+const PROVIDERS: Array<{ value: TranslationProviderId; label: string }> = [
+  { value: 'google', label: '谷歌翻译（免费）' },
+  { value: 'deepl', label: 'DeepL' },
+  { value: 'openai', label: 'OpenAI' },
+  { value: 'azure', label: 'Azure' },
+  { value: 'custom', label: '自定义端点' },
 ];
+
+/**
+ * A small colored monogram identifying the service/model. These are generic
+ * stylized badges (letter + brand-ish color), not reproductions of any
+ * company's logo artwork.
+ */
+function brandBadge(
+  provider: TranslationProviderId,
+  model?: string,
+): { label: string; bg: string } {
+  if (provider !== 'custom') {
+    return {
+      google: { label: 'G', bg: '#4285F4' },
+      deepl: { label: 'D', bg: '#0F2B46' },
+      openai: { label: '◍', bg: '#10A37F' },
+      azure: { label: 'Az', bg: '#0078D4' },
+      custom: { label: '⚙', bg: '#64748B' },
+    }[provider];
+  }
+  const m = (model ?? '').toLowerCase();
+  if (m.includes('gemini')) return { label: '✦', bg: '#1A73E8' };
+  if (m.includes('deepseek')) return { label: 'DS', bg: '#4D6BFE' };
+  if (m.includes('gpt') || /\bo[13]\b/.test(m)) return { label: '◍', bg: '#10A37F' };
+  if (m.includes('claude')) return { label: '✳', bg: '#D97757' };
+  if (m.includes('qwen') || m.includes('tongyi')) return { label: 'Q', bg: '#615CED' };
+  if (m.includes('glm') || m.includes('zhipu')) return { label: 'G', bg: '#3859FF' };
+  if (m.includes('kimi') || m.includes('moonshot')) return { label: 'K', bg: '#111827' };
+  if (m.includes('llama')) return { label: 'L', bg: '#0866FF' };
+  return { label: '⚙', bg: '#64748B' };
+}
+
+function Badge({ label, bg }: { label: string; bg: string }) {
+  return (
+    <span
+      className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
+      style={{ backgroundColor: bg }}
+      aria-hidden
+    >
+      {label}
+    </span>
+  );
+}
 
 const MODES: Array<{ value: DisplayMode; label: string }> = [
   { value: 'bilingual', label: '双语' },
@@ -43,11 +85,11 @@ export function Popup() {
 
   const always = host ? settings.autoTranslateSites.includes(host) : false;
   const never = host ? settings.neverTranslateSites.includes(host) : false;
-  const activeProvider = PROVIDERS.find((p) => p.value === settings.translationProvider);
   const customModel = settings.providers.custom?.model?.trim();
   // For the custom endpoint, show the chosen model id instead of a generic label.
   const providerLabel = (p: (typeof PROVIDERS)[number]) =>
     p.value === 'custom' && customModel ? customModel : p.label;
+  const activeBadge = brandBadge(settings.translationProvider, customModel);
 
   async function toggleTranslate() {
     const tabId = await activeTabId();
@@ -115,13 +157,13 @@ export function Popup() {
           </BigSelect>
         </div>
 
-        {/* 翻译服务（醒目大下拉） */}
-        <div className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
-          <div className="mb-1.5 text-xs text-slate-400">翻译服务</div>
-          <div className="relative flex items-center gap-2">
-            <span className="text-lg">{activeProvider?.icon ?? '🌐'}</span>
+        {/* 翻译服务（单行紧凑：标签 + 徽标 + 服务/模型名 + 下拉） */}
+        <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 dark:border-slate-700">
+          <span className="shrink-0 text-xs text-slate-400">翻译服务</span>
+          <Badge label={activeBadge.label} bg={activeBadge.bg} />
+          <div className="relative min-w-0 flex-1">
             <select
-              className="w-full cursor-pointer appearance-none bg-transparent pr-6 text-sm font-semibold outline-none"
+              className="w-full cursor-pointer appearance-none truncate bg-transparent pr-5 text-sm font-semibold outline-none"
               value={settings.translationProvider}
               onChange={(e) =>
                 void update({ translationProvider: e.target.value as TranslationProviderId })
@@ -134,7 +176,9 @@ export function Popup() {
                 </option>
               ))}
             </select>
-            <span className="pointer-events-none absolute right-0 text-slate-400">▾</span>
+            <span className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-slate-400">
+              ▾
+            </span>
           </div>
         </div>
 
@@ -176,6 +220,15 @@ export function Popup() {
           }}
         >
           打开学习面板（生词本 · 句子本 · AI）
+        </Button>
+
+        <Button
+          className="w-full"
+          onClick={() =>
+            chrome.tabs.create({ url: chrome.runtime.getURL('options.html#subtitle') })
+          }
+        >
+          🎬 字幕样式
         </Button>
       </div>
 

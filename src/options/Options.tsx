@@ -41,6 +41,13 @@ export function Options() {
   const [notice, setNotice] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Deep link: options.html#subtitle scrolls to the subtitle style section.
+  useEffect(() => {
+    if (!settings || !location.hash) return;
+    const el = document.querySelector(location.hash);
+    if (el) requestAnimationFrame(() => el.scrollIntoView({ behavior: 'smooth' }));
+  }, [settings]);
+
   if (!settings) return <div className="p-10 text-center text-slate-400">加载中…</div>;
 
   const flash = (msg: string) => {
@@ -372,7 +379,7 @@ export function Options() {
         )}
       </Section>
 
-      <Section title="界面与字幕">
+      <Section id="subtitle" title="界面与字幕">
         <Field label="主题">
           <SegmentedControl
             options={[
