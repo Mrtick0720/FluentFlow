@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>快捷翻译 UI 预览</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#777;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;color:#d6d6d6;display:grid;place-items:center;min-height:100vh}.window{width:min(1100px,96vw);height:min(700px,92vh);background:#171717;border:2px solid #353535;border-radius:18px;overflow:hidden;box-shadow:0 24px 70px #0008;display:grid;grid-template-rows:1fr 62px}.main{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:0;padding:14px}.pane{padding:22px 38px;background:#262626;border-radius:16px 0 0 16px}.pane.right{background:#181818;border-radius:0 16px 16px 0}.lang{display:flex;align-items:center;justify-content:center;gap:12px;color:#bcbcbc;font-size:21px}.globe{font-size:25px;color:#969696}.chev{font-size:20px;color:#8c8c8c;margin-left:4px}.text{font-size:31px;margin-top:42px;letter-spacing:.1px}.swap{position:absolute;left:50%;top:47%;transform:translate(-50%,-50%);width:82px;height:82px;border:8px solid #171717;border-radius:30px;background:#282828;color:#aaa;font-size:36px;display:grid;place-items:center}.footer{border-top:1px solid #303030;display:flex;align-items:center;padding:0 18px;color:#aaa;font-size:21px}.brand{display:flex;gap:10px;align-items:center}.brand-icon{width:28px;height:28px;border-radius:9px;background:#292929;color:#f0bb40;display:grid;place-items:center;font-size:15px}.note{position:fixed;top:14px;left:50%;transform:translateX(-50%);background:#111e;color:#eee;padding:8px 14px;border-radius:999px;font-size:13px}
+</style>
+</head>
+<body>
+<div class="note">预览：主体按图 1，对底栏暂不调整</div>
+<div class="window">
+  <div class="main">
+    <section class="pane">
+      <div class="lang"><span class="globe">◉</span><span>自动检测</span><span class="chev">⌄</span></div>
+      <div class="text">输入或粘贴要翻译的文本…</div>
+    </section>
+    <section class="pane right">
+      <div class="lang"><span class="globe">◉</span><span>简体中文</span><span class="chev">⌄</span></div>
+      <div class="text">翻译结果</div>
+    </section>
+    <button class="swap" aria-label="交换语言">⇄</button>
+  </div>
+  <footer class="footer"><div class="brand"><span class="brand-icon">▱</span><span>现有模型与操作底栏保持不动</span></div></footer>
+</div>
+</body>
+</html>

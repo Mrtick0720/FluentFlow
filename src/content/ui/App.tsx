@@ -37,6 +37,7 @@ export interface UIActions {
   openSettings(): void;
   quickTranslate(): void;
   immersiveTranslate(): void;
+  translateReplace(): void;
   closeQuickTranslate(): void;
   translateText(text: string, from: string, to: string): Promise<string>;
   saveFabPos(pos: { left: number; top: number }): void;
@@ -514,7 +515,12 @@ function PlayerMenu({ ui, actions }: { ui: UIState; actions: UIActions }) {
           { label: '字幕样式设置', onClick: actions.openSubtitleStyle },
         ]
       : []),
-    { label: ui.pageActive ? '还原整页' : '沉浸翻译（双语）', onClick: actions.immersiveTranslate },
+    ...(ui.pageActive
+      ? [{ label: '还原整页', onClick: actions.immersiveTranslate }]
+      : [
+          { label: '双语翻译（原文 + 译文）', onClick: actions.immersiveTranslate },
+          { label: '翻译成中文（替换原文）', onClick: actions.translateReplace },
+        ]),
     { label: '快捷翻译', onClick: actions.quickTranslate },
     { label: '学习面板（生词 · 句子 · AI）', onClick: actions.openSidePanel },
   ];

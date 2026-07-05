@@ -1,0 +1,31 @@
+<h2>嵌入视频双语字幕：建议数据流</h2>
+<p class="subtitle">两种网站的播放器结构不同，但最终都进入 LinguaFlow 现有字幕控制器。</p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">Khan Academy · YouTube iframe</div>
+    <div class="mockup-body">
+      <div class="placeholder">Khan 顶层页面<br><small>没有 video，也看不到 iframe 内字幕 DOM</small></div>
+      <div style="text-align:center;font-size:24px;margin:12px">↓ 为 iframe 单独注入内容脚本</div>
+      <div class="placeholder">youtube.com/embed/... iframe<br><small>YouTubeAdapter 读取视频、英文字幕和时间</small></div>
+      <div style="text-align:center;font-size:24px;margin:12px">↓ frame 消息同步</div>
+      <div class="placeholder">顶层 LinguaFlow 双语字幕层<br><strong>英文 + 中文</strong></div>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">TED · 自有 HTML5 播放器</div>
+    <div class="mockup-body">
+      <div class="placeholder">TED 页面 video / track / 可见字幕<br><small>优先公开 WebVTT 或 TextTrack</small></div>
+      <div style="text-align:center;font-size:24px;margin:12px">↓ 选择英文轨</div>
+      <div class="placeholder">TedAdapter 标准化字幕段<br><small>若只有英文，也照常送去翻译</small></div>
+      <div style="text-align:center;font-size:24px;margin:12px">↓ TranslationService</div>
+      <div class="placeholder">现有 LinguaFlow 双语字幕层<br><strong>英文 + 中文</strong></div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>共同原则</h3>
+  <p>只读取播放器已经公开给用户的字幕、原生 TextTrack 或公开 transcript；不绕过登录、付费墙、DRM 或访问保护。没有任何英文字幕来源时，明确提示“无可用字幕”。</p>
+</div>

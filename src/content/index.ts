@@ -101,6 +101,17 @@ async function main() {
     void sendRequest('action.setBadge', { active: translator.active }).catch(() => {});
   }
 
+  // Translate the whole page in a chosen mode. When it's already active this
+  // just toggles it off (restore). 'bilingual' keeps the original above each
+  // translation; 'translation-only' replaces the original in place (Chrome-style).
+  function translatePageAs(mode: DisplayMode) {
+    if (!translator.active) {
+      translator.setMode(mode);
+      void sendRequest('settings.set', { patch: { displayMode: mode } }).catch(() => {});
+    }
+    togglePage();
+  }
+
   /* ---------- subtitle learning ---------- */
 
   const adapterRegistry = new VideoAdapterRegistry()
@@ -650,14 +661,10 @@ async function main() {
       const res = await sendRequest('translation.translate', { texts: [text], from, to });
       return res.translations[0] ?? '';
     },
-    // 沉浸翻译: always bilingual (original on top, translation below).
-    immersiveTranslate: () => {
-      if (!translator.active) {
-        translator.setMode('bilingual');
-        void sendRequest('settings.set', { patch: { displayMode: 'bilingual' } }).catch(() => {});
-      }
-      togglePage();
-    },
+    // 双语翻译: original on top, translation below.
+    immersiveTranslate: () => translatePageAs('bilingual'),
+    // 翻译成中文（替换原文），like Chrome's built-in page translate.
+    translateReplace: () => translatePageAs('translation-only'),
     saveFabPos: (pos) => {
       uiStore.set({ fabPos: pos });
       void sendRequest('settings.set', { patch: { fabPos: pos } }).catch(() => {});
