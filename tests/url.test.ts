@@ -19,6 +19,16 @@ describe('normalizeOpenAIBaseUrl', () => {
     );
   });
 
+  it('strips a pasted endpoint suffix so it is not double-appended', () => {
+    expect(normalizeOpenAIBaseUrl('https://oapio.cn/v1/chat/completions')).toBe(
+      'https://oapio.cn/v1',
+    );
+    expect(normalizeOpenAIBaseUrl('https://oapio.cn/v1/chat/completions/')).toBe(
+      'https://oapio.cn/v1',
+    );
+    expect(normalizeOpenAIBaseUrl('https://x/v1/models')).toBe('https://x/v1');
+  });
+
   it('passes through unparseable input and empty strings', () => {
     expect(normalizeOpenAIBaseUrl('')).toBe('');
     expect(normalizeOpenAIBaseUrl('not a url')).toBe('not a url');

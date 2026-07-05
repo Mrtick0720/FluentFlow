@@ -8,11 +8,16 @@
 export function normalizeOpenAIBaseUrl(raw: string): string {
   const trimmed = (raw ?? '').trim();
   if (!trimmed) return trimmed;
+  const stripSuffix = (path: string) =>
+    path.replace(/\/(chat\/completions|completions|models)\/?$/i, '');
   try {
     const url = new URL(trimmed);
+    // Users often paste the full endpoint URL; drop the well-known suffix so we
+    // don't append /chat/completions or /models twice.
+    url.pathname = stripSuffix(url.pathname);
     if (url.pathname === '' || url.pathname === '/') url.pathname = '/v1';
     return url.toString().replace(/\/$/, '');
   } catch {
-    return trimmed.replace(/\/$/, '');
+    return stripSuffix(trimmed.replace(/\/$/, ''));
   }
 }
