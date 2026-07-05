@@ -8,6 +8,33 @@ Rules:
 - Do not add explanations.
 - Respond with ONLY a JSON object: {"translations": ["...", ...]} with exactly one item per input, same order.`;
 
+// Language codes → human names — models translate to "Malay" reliably but not
+// to a bare code like "ms".
+const LANGUAGE_NAMES: Record<string, string> = {
+  'zh-CN': 'Simplified Chinese',
+  'zh-TW': 'Traditional Chinese',
+  zh: 'Chinese',
+  en: 'English',
+  ja: 'Japanese',
+  ko: 'Korean',
+  ms: 'Malay',
+  fr: 'French',
+  de: 'German',
+  es: 'Spanish',
+  it: 'Italian',
+  pt: 'Portuguese',
+  ru: 'Russian',
+  ar: 'Arabic',
+  hi: 'Hindi',
+  th: 'Thai',
+  vi: 'Vietnamese',
+  id: 'Indonesian',
+};
+
+export function languageName(code: string): string {
+  return LANGUAGE_NAMES[code] ?? LANGUAGE_NAMES[code.split('-')[0]!] ?? code;
+}
+
 /** Shared implementation for OpenAI and any OpenAI-compatible endpoint. */
 export async function openAICompatibleTranslate(
   providerName: string,
@@ -22,8 +49,8 @@ export async function openAICompatibleTranslate(
   const model = config.model || defaults.model;
   const system = SYSTEM_PROMPT.replace(
     '{FROM}',
-    from === 'auto' ? 'the detected source language' : from,
-  ).replace('{TO}', to);
+    from === 'auto' ? 'the detected source language' : languageName(from),
+  ).replace('{TO}', languageName(to));
 
   let res: Response;
   try {

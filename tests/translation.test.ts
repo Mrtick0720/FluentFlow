@@ -143,6 +143,20 @@ describe('OpenAI-compatible parsing', () => {
     ).toEqual(['China']);
   });
 
+  it('names the target language in the prompt (not a bare code)', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ choices: [{ message: { content: '{"translations":["x"]}' } }] }),
+    );
+    const provider = new OpenAIProvider();
+    await provider.translate({ texts: ['你好'], from: 'zh-CN', to: 'ms' }, { apiKey: 'sk' });
+    const body = JSON.parse(String((fetchMock.mock.calls[0]![1] as RequestInit).body)) as {
+      messages: Array<{ role: string; content: string }>;
+    };
+    const system = body.messages.find((m) => m.role === 'system')!.content;
+    expect(system).toContain('to Malay');
+    expect(system).toContain('from Simplified Chinese');
+  });
+
   it('classifies 401 as auth error', async () => {
     fetchMock.mockResolvedValue(jsonResponse({}, 401));
     const provider = new OpenAIProvider();
