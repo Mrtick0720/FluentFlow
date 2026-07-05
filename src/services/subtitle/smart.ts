@@ -2,10 +2,10 @@ import type { ProviderSettings } from '@/shared/settings';
 import type { SubtitleSegment } from '@/types/models';
 import { normalizeOpenAIBaseUrl } from '@/utils/url';
 
-/** One sentence: how many consecutive WORDS it covers, plus its translation. */
+/** One sentence the model produced: its (rough) English text and translation. */
 export interface SmartSentence {
-  count: number;
-  translation: string;
+  en: string;
+  zh: string;
 }
 
 export interface TimedWord {
@@ -15,8 +15,8 @@ export interface TimedWord {
 
 /**
  * Flatten cue segments into a timed word list. Per-word time is interpolated
- * within each cue's span, so we can re-cut sentences at any word and still keep
- * them aligned with the audio.
+ * within each cue's span so we can re-cut sentences at any word and keep them
+ * aligned with the audio.
  */
 export function wordsFromSegments(segments: SubtitleSegment[]): { words: TimedWord[]; end: number } {
   const words: TimedWord[] = [];
@@ -32,49 +32,62 @@ export function wordsFromSegments(segments: SubtitleSegment[]): { words: TimedWo
   return { words, end };
 }
 
+const norm = (w: string) => w.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+
 /**
- * Rebuild sentence segments from an LLM word-count grouping. Each sentence's
- * time span comes from its first word to the next sentence's first word (or the
- * transcript end). Returns null if the counts don't consume exactly every word.
+ * Align model sentences to the source word stream to find each sentence's word
+ * range (so we don't rely on the model counting). The displayed text stays the
+ * original ASR words; timing comes from the aligned words. Returns null if the
+ * alignment covers too few words to trust.
  */
-export function rebuildFromWords(
+export function alignSentences(
   words: TimedWord[],
   end: number,
   sentences: SmartSentence[],
 ): SubtitleSegment[] | null {
-  const total = sentences.reduce(
-    (n, s) => n + (Number.isInteger(s.count) && s.count > 0 ? s.count : 0),
-    0,
-  );
-  if (total !== words.length) return null;
-  const out: SubtitleSegment[] = [];
-  let cursor = 0;
-  for (const s of sentences) {
-    const group = words.slice(cursor, cursor + s.count);
-    cursor += s.count;
-    if (group.length === 0) continue;
-    out.push({
-      index: out.length,
-      start: group[0]!.start,
-      end: words[cursor]?.start ?? end,
-      text: group.map((w) => w.text).join(' ').replace(/\s+/g, ' ').trim(),
-      translation: s.translation?.trim() || undefined,
-    });
+  const spans: Array<{ from: number; to: number; zh: string }> = [];
+  let si = 0;
+  for (const sent of sentences) {
+    const enWords = sent.en.split(/\s+/).map(norm).filter(Boolean);
+    const from = si;
+    for (const ew of enWords) {
+      // Find this word at/after the cursor within a small look-ahead window.
+      for (let k = si; k < Math.min(si + 6, words.length); k++) {
+        if (norm(words[k]!.text) === ew) {
+          si = k + 1;
+          break;
+        }
+      }
+    }
+    if (si > from) spans.push({ from, to: si, zh: sent.zh });
   }
-  return out;
+  // Too little of the stream consumed → the model reworded/hallucinated; bail.
+  if (spans.length === 0 || si < words.length * 0.6) return null;
+  // Make sure the last span reaches the end so no words are dropped.
+  spans[spans.length - 1]!.to = words.length;
+  return spans.map((s, i) => ({
+    index: i,
+    start: words[s.from]!.start,
+    end: words[spans[i + 1]?.from ?? words.length]?.start ?? end,
+    text: words
+      .slice(s.from, s.to)
+      .map((w) => w.text)
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim(),
+    translation: s.zh?.trim() || undefined,
+  }));
 }
 
-const SYSTEM = `You segment and translate auto-generated video subtitles (ASR: a stream of words, no punctuation).
-You are given a JSON array of consecutive WORDS. Split them into complete, natural sentences and translate each sentence into {TO}.
+const SYSTEM = `You segment and translate auto-generated video subtitles (ASR: a stream of words with no punctuation).
+You are given a JSON array of consecutive WORDS. Split them into complete, natural sentences and translate each into {TO}.
 Rules:
-- One sentence per item. Only merge into the same item if a sentence is very short (a few words).
-- Put boundary words on the correct sentence (e.g. a trailing "milk" belongs to the sentence it ends, not the next one).
-- Do NOT reorder, add, drop, or edit words.
-Return ONLY JSON: {"sentences":[{"count":N,"zh":"the translation"}, ...]}
-- "count" = how many consecutive words (in the given order) that sentence covers.
-- The counts MUST sum to the number of words and cover every word exactly once, in order.`;
+- One sentence per item. Only merge into one item if a sentence is very short (a few words).
+- Put boundary words on the correct sentence (a trailing "milk" belongs to the sentence it ends, not the next one).
+- Keep the original words in order; you may add punctuation, but do not paraphrase or drop words.
+Return ONLY JSON: {"sentences":[{"en":"the sentence in English","zh":"the translation"}, ...]}, covering every word in order.`;
 
-/** Group a window of words into sentences + translate, via an OpenAI-compatible endpoint. */
+/** Split a window of words into sentences + translate, via an OpenAI-compatible endpoint. */
 export async function smartGroupTranslate(
   config: ProviderSettings,
   words: string[],
@@ -105,16 +118,16 @@ export async function smartGroupTranslate(
   return parseSmartSentences(data.choices?.[0]?.message?.content ?? '');
 }
 
-/** Parse the {"sentences":[{count,zh}]} response, tolerant of prose/fences. */
+/** Parse the {"sentences":[{en,zh}]} response, tolerant of prose/fences. */
 export function parseSmartSentences(content: string): SmartSentence[] {
   const parsed = JSON.parse(extractJsonObject(content)) as {
-    sentences?: Array<{ count?: unknown; zh?: unknown }>;
+    sentences?: Array<{ en?: unknown; zh?: unknown }>;
   };
   const list = parsed?.sentences;
   if (!Array.isArray(list)) throw new Error('smart segment: no sentences');
   return list.map((s) => ({
-    count: Number(s.count),
-    translation: typeof s.zh === 'string' ? s.zh : '',
+    en: typeof s.en === 'string' ? s.en : '',
+    zh: typeof s.zh === 'string' ? s.zh : '',
   }));
 }
 

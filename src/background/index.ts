@@ -165,19 +165,15 @@ const router = new MessageRouter()
   .on('subtitle.smartTranslate', async ({ texts, to }) => {
     const settings = await getSettings();
     const { implId, config } = resolveProvider(settings.translationProvider, settings);
-    // Only OpenAI-compatible chat providers can group + translate.
+    // Only OpenAI-compatible chat providers can group + translate. `null` means
+    // "not capable" (the caller stops); transient errors throw so it can retry.
     if (implId !== 'custom' && implId !== 'openai') return { sentences: null };
     const defaults =
       implId === 'openai'
         ? { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' }
         : { baseUrl: '', model: '' };
     if (!config.baseUrl && !defaults.baseUrl) return { sentences: null };
-    try {
-      const sentences = await smartGroupTranslate(config, texts, to, defaults);
-      return { sentences };
-    } catch {
-      return { sentences: null };
-    }
+    return { sentences: await smartGroupTranslate(config, texts, to, defaults) };
   })
   .on('cache.clear', async ({ scope }) => {
     await cacheClear(scope === 'all' ? 'all' : scope);

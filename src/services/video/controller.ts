@@ -1,6 +1,6 @@
 import type { SubtitleSegment, SubtitleTrack } from '@/types/models';
 import {
-  rebuildFromWords,
+  alignSentences,
   wordsFromSegments,
   type SmartSentence,
 } from '@/services/subtitle/smart';
@@ -310,7 +310,7 @@ export class SubtitleController {
             unsupported = true;
             break;
           }
-          rebuilt = rebuildFromWords(words, end, sentences);
+          rebuilt = alignSentences(words, end, sentences);
         } catch {
           rebuilt = null;
         }
