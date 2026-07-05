@@ -671,7 +671,7 @@ function FloatingWidget({ ui, actions }: { ui: UIState; actions: UIActions }) {
         title="LinguaFlow 菜单"
         aria-label="LinguaFlow 菜单"
       >
-        <img src={chrome.runtime.getURL('icons/icon48.png')} alt="" />
+        <img src={chrome.runtime.getURL('icons/icon128.png')} alt="" />
       </button>
       <button
         className={`lf-fab lf-fab-mini lf-fab-immersive ${ui.pageActive ? 'lf-active' : ''}`}
