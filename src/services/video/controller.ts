@@ -294,19 +294,25 @@ export class SubtitleController {
       if (generation !== this.translateGeneration) return;
       const idxs = order.slice(c, c + CHUNK).filter((i) => this.segments[i]!.translation === undefined);
       if (idxs.length === 0) continue;
-      try {
-        const translations = await this.deps.translate(idxs.map((i) => this.segments[i]!.text));
-        if (generation !== this.translateGeneration) return;
-        idxs.forEach((i, j) => {
-          this.segments[i]!.translation = translations[j] ?? '';
-        });
-        this.emitTranscript();
-        const current = this.segments[this.index];
-        if (current?.translation !== undefined && this.state.translation === '') {
-          this.setState({ translation: current.translation, translating: false });
+      // Retry a transient failure, then SKIP this chunk and keep filling the
+      // rest — one bad chunk must not stop the whole-video pre-translation.
+      let done = false;
+      for (let attempt = 0; attempt < 2 && !done; attempt++) {
+        try {
+          const translations = await this.deps.translate(idxs.map((i) => this.segments[i]!.text));
+          if (generation !== this.translateGeneration) return;
+          idxs.forEach((i, j) => {
+            this.segments[i]!.translation = translations[j] ?? '';
+          });
+          this.emitTranscript();
+          const current = this.segments[this.index];
+          if (current?.translation !== undefined && this.state.translation === '') {
+            this.setState({ translation: current.translation, translating: false });
+          }
+          done = true;
+        } catch {
+          // transient — retry once, then move on to the next chunk.
         }
-      } catch {
-        return; // stop the background fill; the on-demand path still works
       }
       await new Promise((resolve) => setTimeout(resolve, 120));
     }
