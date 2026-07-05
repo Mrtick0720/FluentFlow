@@ -269,12 +269,12 @@ export class SubtitleController {
    */
   private translateGeneration = 0;
 
-  private async translateAllInBackground(): Promise<void> {
+  private async translateAllInBackground(fromIndex?: number): Promise<void> {
     const generation = ++this.translateGeneration;
     const CHUNK = 24;
     // Fill order: the current line and everything ahead first (so playback
     // never catches an untranslated line), then wrap back to the beginning.
-    const start = Math.max(0, this.index);
+    const start = Math.max(0, fromIndex ?? this.index);
     const order: number[] = [];
     for (let i = start; i < this.segments.length; i++) order.push(i);
     for (let i = 0; i < start; i++) order.push(i);
@@ -313,11 +313,10 @@ export class SubtitleController {
     if (!segment) return;
     this.adapter?.seek(segment.start + 0.01);
     this.resumeIfAutoPaused();
-    // Re-prioritize the background fill around the new position.
-    if (this.state.mode === 'track') {
-      this.index = index;
-      void this.translateAllInBackground();
-    }
+    // Re-prioritize the background fill around the target line. Don't touch
+    // this.index — syncTrackMode owns it from the video's real time, so the
+    // highlight and overlay stay in sync with playback.
+    if (this.state.mode === 'track') void this.translateAllInBackground(index);
   }
 
   getVideoRect(): DOMRect | null {
