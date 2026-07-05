@@ -860,9 +860,19 @@ function TranscriptPanel({ ui, actions }: { ui: UIState; actions: UIActions }) {
   const s = ui.subtitleState!;
   const activeIndex = s.mode === 'track' ? s.index : ui.transcript.length - 1;
   const activeRef = useRef<HTMLButtonElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    activeRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    const list = listRef.current;
+    const active = activeRef.current;
+    if (!list || !active) return;
+    // Keep the current line at the ~3rd position: scroll so the item two rows
+    // above it sits at the top (first/second lines naturally stay higher).
+    const prev1 = active.previousElementSibling as HTMLElement | null;
+    const prev2 = prev1?.previousElementSibling as HTMLElement | null;
+    const anchor = prev2 ?? prev1 ?? active;
+    const delta = anchor.getBoundingClientRect().top - list.getBoundingClientRect().top;
+    list.scrollBy({ top: delta, behavior: 'smooth' });
   }, [activeIndex, ui.transcript.length]);
 
   return (
@@ -880,7 +890,7 @@ function TranscriptPanel({ ui, actions }: { ui: UIState; actions: UIActions }) {
           ✕
         </button>
       </div>
-      <div className="lf-transcript-list">
+      <div className="lf-transcript-list" ref={listRef}>
         {ui.transcript.length === 0 && (
           <div className="lf-muted" style={{ padding: 12 }}>
             {s.mode === 'live'
