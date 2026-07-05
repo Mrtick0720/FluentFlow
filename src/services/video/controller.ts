@@ -1,4 +1,5 @@
 import type { SubtitleSegment, SubtitleTrack } from '@/types/models';
+import { rebuildSentences, type SmartSentence } from '@/services/subtitle/smart';
 import type { CaptionState, VideoAdapter, VideoAdapterRegistry } from './adapter';
 
 export interface SubtitleViewState {
@@ -26,6 +27,12 @@ export interface SubtitleControllerDeps {
    * front. Live mode: grows as captions are seen (no pre-fetching).
    */
   onTranscript?(segments: SubtitleSegment[]): void;
+  /**
+   * Group raw ASR caption fragments into complete sentences and translate them
+   * (LLM providers only). Returns null when unavailable — the controller then
+   * keeps the raw cues.
+   */
+  smartTranslate?(texts: string[]): Promise<SmartSentence[] | null>;
 }
 
 const LIVE_SKIP_SECONDS = 5;
@@ -229,6 +236,7 @@ export class SubtitleController {
     this.lastLiveText = '';
     this.liveHistory = [];
     this.translateGeneration++;
+    this.smartGeneration++; // cancel any in-flight re-segmentation
     // Invalidate any in-flight live translation.
     this.liveSeq++;
     this.liveAppliedSeq = this.liveSeq;
@@ -257,6 +265,49 @@ export class SubtitleController {
     this.segments = [...track.segments].sort((a, b) => a.start - b.start);
     this.index = -1;
     this.setState({ activeTrackId: trackId, total: this.segments.length });
+    this.emitTranscript();
+    this.syncTrackMode(true);
+    void this.translateAllInBackground();
+    // Upgrade the raw ASR cues to complete sentences in the background (LLM
+    // only); swaps the transcript in once ready, keeping audio timing.
+    if (this.deps.smartTranslate) void this.smartResegmentInBackground();
+  }
+
+  private smartGeneration = 0;
+
+  private async smartResegmentInBackground(): Promise<void> {
+    const generation = ++this.smartGeneration;
+    const cues = this.segments;
+    if (cues.length < 3 || !this.deps.smartTranslate) return;
+    const WINDOW = 30;
+    const merged: SubtitleSegment[] = [];
+    for (let i = 0; i < cues.length; i += WINDOW) {
+      if (generation !== this.smartGeneration || this.state.mode !== 'track') return;
+      const window = cues.slice(i, i + WINDOW);
+      let rebuilt: SubtitleSegment[] | null = null;
+      let unsupported = false;
+      try {
+        const sentences = await this.deps.smartTranslate(window.map((c) => c.text));
+        if (generation !== this.smartGeneration) return;
+        if (sentences === null) unsupported = true;
+        else rebuilt = rebuildSentences(window, sentences);
+      } catch {
+        rebuilt = null;
+      }
+      // Provider can't group (not an LLM) — keep the raw cues, no swap.
+      if (unsupported && i === 0) return;
+      // Fallback for a failed window: keep its raw cues (translated separately).
+      const part = rebuilt ?? window.map((c) => ({ ...c }));
+      for (const seg of part) merged.push({ ...seg, index: merged.length });
+      await new Promise((resolve) => setTimeout(resolve, 80));
+    }
+    if (generation !== this.smartGeneration || this.state.mode !== 'track') return;
+
+    // Swap in the sentence-segmented transcript. Cancel the raw-cue fill first,
+    // then fill any untranslated (fallback) sentences.
+    this.translateGeneration++;
+    this.segments = merged;
+    this.setState({ total: merged.length });
     this.emitTranscript();
     this.syncTrackMode(true);
     void this.translateAllInBackground();

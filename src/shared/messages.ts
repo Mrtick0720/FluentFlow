@@ -11,6 +11,7 @@ import type {
   Vocabulary,
 } from '@/types/models';
 import type { ProviderSelection, UserSettings } from '@/shared/settings';
+import type { SmartSentence } from '@/services/subtitle/smart';
 
 /**
  * Typed RPC between contexts. Every request type maps to its request/response
@@ -68,6 +69,11 @@ export interface RequestMap {
   'models.list': {
     req: { target: 'translationCustom' | 'ai'; endpointId?: string };
     res: { models: string[] };
+  };
+  /** Group ASR caption fragments into sentences + translate them (LLM only). */
+  'subtitle.smartTranslate': {
+    req: { texts: string[]; to: LanguageCode };
+    res: { sentences: SmartSentence[] | null };
   };
   'permissions.requestOrigin': { req: { origin: string }; res: { granted: boolean } };
   'sidepanel.open': { req: null; res: null };

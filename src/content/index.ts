@@ -114,6 +114,8 @@ async function main() {
     translate,
     onState: (state) => uiStore.set({ subtitleState: state }),
     onTranscript: (segments) => uiStore.set({ transcript: segments }),
+    smartTranslate: async (texts) =>
+      (await sendRequest('subtitle.smartTranslate', { texts, to: settings.targetLanguage })).sentences,
   });
 
   // Auto-open coordination. Opening in live mode and then upgrading to the full

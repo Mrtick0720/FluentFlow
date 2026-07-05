@@ -16,7 +16,8 @@ import {
 } from '@/services/storage/settingsStore';
 import { fetchModelIds } from '@/services/ai/models';
 import { createDefaultRegistry } from '@/services/translation/registry';
-import { TranslationService } from '@/services/translation/service';
+import { TranslationService, resolveProvider } from '@/services/translation/service';
+import { smartGroupTranslate } from '@/services/subtitle/smart';
 import {
   AI_STREAM_PORT,
   sendToTab,
@@ -160,6 +161,23 @@ const router = new MessageRouter()
         : { baseUrl: endpoint?.baseUrl, apiKey: endpoint?.apiKey };
     if (!baseUrl) throw new Error('未设置 Base URL');
     return { models: await fetchModelIds(baseUrl, apiKey) };
+  })
+  .on('subtitle.smartTranslate', async ({ texts, to }) => {
+    const settings = await getSettings();
+    const { implId, config } = resolveProvider(settings.translationProvider, settings);
+    // Only OpenAI-compatible chat providers can group + translate.
+    if (implId !== 'custom' && implId !== 'openai') return { sentences: null };
+    const defaults =
+      implId === 'openai'
+        ? { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' }
+        : { baseUrl: '', model: '' };
+    if (!config.baseUrl && !defaults.baseUrl) return { sentences: null };
+    try {
+      const sentences = await smartGroupTranslate(config, texts, to, defaults);
+      return { sentences };
+    } catch {
+      return { sentences: null };
+    }
   })
   .on('cache.clear', async ({ scope }) => {
     await cacheClear(scope === 'all' ? 'all' : scope);
