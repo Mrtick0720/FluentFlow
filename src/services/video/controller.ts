@@ -1,9 +1,5 @@
 import type { SubtitleSegment, SubtitleTrack } from '@/types/models';
-import {
-  alignSentences,
-  wordsFromSegments,
-  type SmartSentence,
-} from '@/services/subtitle/smart';
+import type { SmartSentence } from '@/services/subtitle/smart';
 import type { CaptionState, VideoAdapter, VideoAdapterRegistry } from './adapter';
 
 export interface SubtitleViewState {
@@ -240,7 +236,6 @@ export class SubtitleController {
     this.lastLiveText = '';
     this.liveHistory = [];
     this.translateGeneration++;
-    this.smartGeneration++; // cancel any in-flight re-segmentation
     // Invalidate any in-flight live translation.
     this.liveSeq++;
     this.liveAppliedSeq = this.liveSeq;
@@ -272,64 +267,10 @@ export class SubtitleController {
     this.emitTranscript();
     this.syncTrackMode(true);
     void this.translateAllInBackground();
-    // Upgrade the raw ASR cues to complete sentences in the background (LLM
-    // only); swaps the transcript in once ready, keeping audio timing.
-    if (this.deps.smartTranslate) void this.smartResegmentInBackground();
-  }
-
-  private smartGeneration = 0;
-
-  private async smartResegmentInBackground(): Promise<void> {
-    const generation = ++this.smartGeneration;
-    if (this.segments.length < 3 || !this.deps.smartTranslate) return;
-    const CHUNK = 20; // original segments per LLM call
-    const original = this.segments;
-    const chunkCount = Math.ceil(original.length / CHUNK);
-    // Each part starts as its heuristic segments; a processed chunk replaces it
-    // with word-level sentences.
-    const parts: SubtitleSegment[][] = [];
-    for (let c = 0; c < chunkCount; c++) parts.push(original.slice(c * CHUNK, (c + 1) * CHUNK));
-
-    // Process the chunk under playback first, then forward, then wrap — so the
-    // watched region is re-segmented within a couple of seconds.
-    const startChunk = Math.floor(Math.max(0, this.index) / CHUNK);
-    const order: number[] = [];
-    for (let c = startChunk; c < chunkCount; c++) order.push(c);
-    for (let c = 0; c < startChunk; c++) order.push(c);
-
-    for (const c of order) {
-      if (generation !== this.smartGeneration || this.state.mode !== 'track') return;
-      const { words, end } = wordsFromSegments(original.slice(c * CHUNK, (c + 1) * CHUNK));
-      let rebuilt: SubtitleSegment[] | null = null;
-      let unsupported = false;
-      for (let attempt = 0; attempt < 2 && !rebuilt; attempt++) {
-        try {
-          const sentences = await this.deps.smartTranslate(words.map((w) => w.text));
-          if (generation !== this.smartGeneration) return;
-          if (sentences === null) {
-            unsupported = true;
-            break;
-          }
-          rebuilt = alignSentences(words, end, sentences);
-        } catch {
-          rebuilt = null;
-        }
-      }
-      if (unsupported) return; // provider can't group — keep the heuristic transcript
-      if (!rebuilt) continue; // this chunk failed; keep its heuristic segments, move on
-
-      // Progressive swap: rebuild the transcript with this chunk upgraded.
-      parts[c] = rebuilt;
-      const merged: SubtitleSegment[] = [];
-      for (const p of parts) for (const seg of p) merged.push({ ...seg, index: merged.length });
-      this.translateGeneration++; // restart the fill on the new array
-      this.segments = merged;
-      this.setState({ total: merged.length });
-      this.emitTranscript();
-      this.syncTrackMode(true);
-      void this.translateAllInBackground();
-      await new Promise((resolve) => setTimeout(resolve, 80));
-    }
+    // NOTE: AI re-segmentation (smartResegmentInBackground) is disabled — on
+    // messy ASR (fillers, stutters, no punctuation) the alignment was
+    // unreliable and could merge a whole chunk into one giant block. The raw
+    // per-cue path below stays the stable default.
   }
 
   /**
