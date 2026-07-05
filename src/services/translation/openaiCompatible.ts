@@ -42,6 +42,8 @@ export async function openAICompatibleTranslate(
         temperature: 0.2,
         response_format: { type: 'json_object' },
       }),
+      // Don't let a hung endpoint (flaky proxy) spin forever — abort and retry.
+      signal: AbortSignal.timeout(45_000),
     });
   } catch (e) {
     throw networkError(providerName, e);

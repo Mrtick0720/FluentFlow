@@ -58,6 +58,7 @@ export class PageTranslator {
   private queue = new Set<HTMLElement>();
   private inflight = new Set<HTMLElement>();
   private activeFlushes = 0;
+  private attempts = new WeakMap<HTMLElement, number>();
   private spinners = new WeakMap<HTMLElement, HTMLElement>();
   private doneCount = 0;
   private totalCount = 0;
@@ -200,8 +201,13 @@ export class PageTranslator {
       this.doneCount += applied;
       this.opts.onProgress?.(this.doneCount, this.totalCount);
     } catch (err) {
-      // Re-queue so a later scroll retries; surface the error once.
-      batch.forEach((el) => this.queue.add(el));
+      // Retry a few times (transient proxy/network errors), then give up so the
+      // paragraph doesn't spin forever.
+      batch.forEach((el) => {
+        const n = (this.attempts.get(el) ?? 0) + 1;
+        this.attempts.set(el, n);
+        if (n < 3 && el.isConnected) this.queue.add(el);
+      });
       this.opts.onError?.(err instanceof Error ? err.message : String(err));
     } finally {
       // Remove any spinners still up (error path / skipped elements).
