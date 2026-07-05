@@ -4,6 +4,7 @@ import { useSettings, useTheme } from '@/hooks/useSettings';
 import { COMMON_LANGUAGES } from '@/shared/constants';
 import { sendRequest } from '@/shared/messages';
 import { REDACTED_KEY, type ProviderSelection, type UserSettings } from '@/shared/settings';
+import { providerLogo } from '@/shared/providerLogos';
 import type { Sentence, TranslationProviderId, Vocabulary } from '@/types/models';
 import { downloadFile, toCsv } from '@/utils/csv';
 
@@ -526,6 +527,15 @@ function CustomEndpointsEditor({
             }`}
           >
             <div className="flex items-center gap-2">
+              {providerLogo(ep.name, ep.model) && (
+                <img
+                  src={providerLogo(ep.name, ep.model)!}
+                  width={24}
+                  height={24}
+                  alt=""
+                  className="shrink-0 rounded"
+                />
+              )}
               <div className="min-w-0 flex-1">
                 <SavedInput
                   value={ep.name}

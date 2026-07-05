@@ -5,6 +5,7 @@ import { useSettings, useTheme } from '@/hooks/useSettings';
 import { COMMON_LANGUAGES } from '@/shared/constants';
 import { sendRequest, sendToTab } from '@/shared/messages';
 import type { ProviderSelection } from '@/shared/settings';
+import { providerLogo } from '@/shared/providerLogos';
 import type { DisplayMode, StatsSnapshot, TranslationProviderId } from '@/types/models';
 
 const PROVIDERS: Array<{ value: TranslationProviderId; label: string }> = [
@@ -57,6 +58,67 @@ function Badge({ label, bg }: { label: string; bg: string }) {
   );
 }
 
+type EngineOption = { value: ProviderSelection; label: string; model?: string };
+
+/** Brand logo if we have one, otherwise the colored monogram. */
+function ServiceIcon({ value, model, label }: EngineOption) {
+  const logo = providerLogo(label, model, value);
+  if (logo) return <img src={logo} width={20} height={20} alt="" className="shrink-0 rounded" />;
+  const b = brandBadge(value, model);
+  return <Badge label={b.label} bg={b.bg} />;
+}
+
+/** Translation-service picker with logos (native <select> can't show images). */
+function EngineSelect({
+  options,
+  value,
+  onChange,
+}: {
+  options: EngineOption[];
+  value: ProviderSelection;
+  onChange: (v: ProviderSelection) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const current = options.find((o) => o.value === value) ?? options[0]!;
+  return (
+    <div className="relative flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 dark:border-slate-700">
+      <span className="shrink-0 text-xs text-slate-400">翻译服务</span>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+        aria-label="翻译服务"
+      >
+        <ServiceIcon value={current.value} model={current.model} label={current.label} />
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold">{current.label}</span>
+        <span className="shrink-0 text-slate-400">▾</span>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-800">
+            {options.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                onClick={() => {
+                  onChange(o.value);
+                  setOpen(false);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-700"
+              >
+                <ServiceIcon value={o.value} model={o.model} label={o.label} />
+                <span className="min-w-0 flex-1 truncate">{o.label}</span>
+                {o.value === value && <span className="shrink-0 text-indigo-500">✓</span>}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 const MODES: Array<{ value: DisplayMode; label: string }> = [
   { value: 'bilingual', label: '双语' },
   { value: 'translation-only', label: '仅译文' },
@@ -101,10 +163,6 @@ export function Popup() {
       model: ep.model,
     })),
   ];
-  const activeModel = engineOptions.find(
-    (o) => o.value === settings.translationProvider,
-  )?.model;
-  const activeBadge = brandBadge(settings.translationProvider, activeModel);
 
   async function toggleTranslate() {
     const tabId = await activeTabId();
@@ -141,8 +199,8 @@ export function Popup() {
   }
 
   return (
-    <div className="flex w-[360px] flex-col">
-      <div className="space-y-3 p-4">
+    <div className="flex max-h-[596px] w-[360px] flex-col">
+      <div className="flex-1 space-y-2.5 overflow-y-auto p-4">
         <header className="flex items-center gap-2">
           <img src={chrome.runtime.getURL('icons/icon48.png')} alt="" className="h-6 w-6 rounded-lg" />
           <span className="text-base font-bold">LinguaFlow</span>
@@ -175,30 +233,12 @@ export function Popup() {
           </BigSelect>
         </div>
 
-        {/* 翻译服务（单行紧凑：标签 + 徽标 + 服务/模型名 + 下拉） */}
-        <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 dark:border-slate-700">
-          <span className="shrink-0 text-xs text-slate-400">翻译服务</span>
-          <Badge label={activeBadge.label} bg={activeBadge.bg} />
-          <div className="relative min-w-0 flex-1">
-            <select
-              className="w-full cursor-pointer appearance-none truncate bg-transparent pr-5 text-sm font-semibold outline-none"
-              value={settings.translationProvider}
-              onChange={(e) =>
-                void update({ translationProvider: e.target.value as ProviderSelection })
-              }
-              aria-label="翻译服务"
-            >
-              {engineOptions.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-            <span className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-slate-400">
-              ▾
-            </span>
-          </div>
-        </div>
+        {/* 翻译服务：带 logo 的自定义下拉（原生 select 无法显示图标） */}
+        <EngineSelect
+          options={engineOptions}
+          value={settings.translationProvider}
+          onChange={(v) => void update({ translationProvider: v })}
+        />
 
         <Button
           variant="primary"
