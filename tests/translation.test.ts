@@ -167,6 +167,28 @@ describe('TranslationService', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('degrades a failed batch to per-line requests', async () => {
+    await updateSettings({
+      translationProvider: 'custom:a',
+      customEndpoints: [
+        { id: 'a', name: 'X', baseUrl: 'https://x/v1', model: 'm', apiKey: 'sk' },
+      ],
+    });
+    // Batch request (2 texts) returns unparseable prose; single-text requests
+    // return the plain translation (recovered by the single-line fallback).
+    fetchMock.mockImplementation(async (_url: URL, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as { messages: Array<{ content: string }> };
+      const inputs = JSON.parse(body.messages[1]!.content) as string[];
+      if (inputs.length > 1) {
+        return jsonResponse({ choices: [{ message: { content: 'sorry, no json here' } }] });
+      }
+      return jsonResponse({ choices: [{ message: { content: `译:${inputs[0]}` } }] });
+    });
+    const service = new TranslationService(createDefaultRegistry());
+    const out = await service.translate({ texts: ['a', 'b'], from: 'auto', to: 'zh-CN' });
+    expect(out.translations).toEqual(['译:a', '译:b']);
+  });
+
   it('bypasses cache read with refresh', async () => {
     await updateSettings({ translationProvider: 'google' });
     fetchMock.mockImplementation(async (url: URL) =>

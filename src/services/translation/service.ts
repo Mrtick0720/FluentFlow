@@ -71,10 +71,25 @@ export class TranslationService {
     // overlapping requests translates the page far faster.
     await Promise.all(
       batches.map(async (batch) => {
-        const translated = await provider.translate(
-          { texts: batch.map((m) => m.text), from: req.from, to: req.to },
-          config,
-        );
+        const texts = batch.map((m) => m.text);
+        let translated: string[];
+        try {
+          translated = await provider.translate({ texts, from: req.from, to: req.to }, config);
+        } catch (err) {
+          // A model that can't return a clean JSON array fails the whole batch.
+          // Degrade to one request per line, each recovered by the single-line
+          // fallback; only rethrow if every line also fails (real config error).
+          translated = await Promise.all(
+            texts.map(async (t) => {
+              try {
+                return (await provider.translate({ texts: [t], from: req.from, to: req.to }, config))[0] ?? '';
+              } catch {
+                return '';
+              }
+            }),
+          );
+          if (translated.every((v) => !v)) throw err;
+        }
         for (let i = 0; i < batch.length; i++) {
           const { index, key } = batch[i]!;
           const value = translated[i] ?? '';
