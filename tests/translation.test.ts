@@ -122,6 +122,15 @@ describe('OpenAI-compatible parsing', () => {
     );
   });
 
+  it('extracts JSON embedded in prose', () => {
+    expect(parseTranslationsJson('t', 'Sure! {"translations": ["a"]} done', 1)).toEqual(['a']);
+  });
+
+  it('falls back to raw text for a single line (model ignored JSON format)', () => {
+    expect(parseTranslationsJson('t', '你好世界', 1)).toEqual(['你好世界']);
+    expect(parseTranslationsJson('t', '"你好"', 1)).toEqual(['你好']);
+  });
+
   it('classifies 401 as auth error', async () => {
     fetchMock.mockResolvedValue(jsonResponse({}, 401));
     const provider = new OpenAIProvider();

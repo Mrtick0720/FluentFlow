@@ -66,26 +66,60 @@ export function parseTranslationsJson(
   try {
     parsed = JSON.parse(extractJson(content));
   } catch {
-    throw new TranslationError('provider_error', `${providerName}: completion is not valid JSON`);
+    parsed = undefined;
   }
-  const translations = Array.isArray(parsed)
+  const raw = Array.isArray(parsed)
     ? parsed
     : (parsed as { translations?: unknown })?.translations;
+  const translations = Array.isArray(raw) ? raw : raw != null ? [raw] : undefined;
   if (
-    !Array.isArray(translations) ||
-    translations.length !== expectedCount ||
-    !translations.every((t) => typeof t === 'string')
+    Array.isArray(translations) &&
+    translations.length === expectedCount &&
+    translations.every((t) => typeof t === 'string')
   ) {
-    throw new TranslationError(
-      'provider_error',
-      `${providerName}: expected ${expectedCount} translations in response`,
-    );
+    return translations as string[];
   }
-  return translations;
+
+  // Fallback: for a single input (subtitles, quick-translate) a model that
+  // ignored the JSON instruction usually just returns the translated text.
+  if (expectedCount === 1) {
+    const text = rawText(content);
+    if (text && !/^[[{]/.test(text)) return [text];
+  }
+
+  throw new TranslationError(
+    'provider_error',
+    `${providerName}: expected ${expectedCount} translations in response`,
+  );
 }
 
-/** Tolerate models that wrap JSON in markdown fences. */
+/** Extract a JSON object/array even when wrapped in fences or surrounding prose. */
 function extractJson(content: string): string {
-  const fenced = content.match(/```(?:json)?\s*([\s\S]*?)```/);
-  return (fenced?.[1] ?? content).trim();
+  const s = content.trim();
+  const fenced = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced?.[1]) return fenced[1].trim();
+  const obj = s.indexOf('{');
+  const arr = s.indexOf('[');
+  const start = obj === -1 ? arr : arr === -1 ? obj : Math.min(obj, arr);
+  if (start >= 0) {
+    const close = s[start] === '{' ? '}' : ']';
+    const end = s.lastIndexOf(close);
+    if (end > start) return s.slice(start, end + 1);
+  }
+  return s;
+}
+
+/** Strip fences/quotes to recover a plain-text translation. */
+function rawText(content: string): string {
+  let s = content.trim();
+  const fenced = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced?.[1]) s = fenced[1].trim();
+  if (/^".*"$/s.test(s)) {
+    try {
+      return String(JSON.parse(s));
+    } catch {
+      /* fall through */
+    }
+  }
+  return s;
 }
