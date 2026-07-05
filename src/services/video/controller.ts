@@ -282,49 +282,54 @@ export class SubtitleController {
   private async smartResegmentInBackground(): Promise<void> {
     const generation = ++this.smartGeneration;
     if (this.segments.length < 3 || !this.deps.smartTranslate) return;
-    // Word-level: re-cut sentences at any word (fixes boundary words) and time
-    // them from the covered words.
-    const { words, end } = wordsFromSegments(this.segments);
-    const WINDOW = 180; // words per LLM call
-    const merged: SubtitleSegment[] = [];
-    for (let i = 0; i < words.length; i += WINDOW) {
+    const CHUNK = 20; // original segments per LLM call
+    const original = this.segments;
+    const chunkCount = Math.ceil(original.length / CHUNK);
+    // Each part starts as its heuristic segments; a processed chunk replaces it
+    // with word-level sentences.
+    const parts: SubtitleSegment[][] = [];
+    for (let c = 0; c < chunkCount; c++) parts.push(original.slice(c * CHUNK, (c + 1) * CHUNK));
+
+    // Process the chunk under playback first, then forward, then wrap — so the
+    // watched region is re-segmented within a couple of seconds.
+    const startChunk = Math.floor(Math.max(0, this.index) / CHUNK);
+    const order: number[] = [];
+    for (let c = startChunk; c < chunkCount; c++) order.push(c);
+    for (let c = 0; c < startChunk; c++) order.push(c);
+
+    for (const c of order) {
       if (generation !== this.smartGeneration || this.state.mode !== 'track') return;
-      const win = words.slice(i, i + WINDOW);
-      const winEnd = words[i + WINDOW]?.start ?? end;
+      const { words, end } = wordsFromSegments(original.slice(c * CHUNK, (c + 1) * CHUNK));
       let rebuilt: SubtitleSegment[] | null = null;
       let unsupported = false;
       for (let attempt = 0; attempt < 2 && !rebuilt; attempt++) {
         try {
-          const sentences = await this.deps.smartTranslate(win.map((w) => w.text));
+          const sentences = await this.deps.smartTranslate(words.map((w) => w.text));
           if (generation !== this.smartGeneration) return;
           if (sentences === null) {
             unsupported = true;
             break;
           }
-          rebuilt = rebuildFromWords(win, winEnd, sentences);
+          rebuilt = rebuildFromWords(words, end, sentences);
         } catch {
           rebuilt = null;
         }
       }
-      if (unsupported && i === 0) return; // provider can't group — keep raw cues
-      // If a window can't be grouped even after a retry, abandon the upgrade and
-      // keep the existing (usable) heuristic transcript rather than half-do it.
-      if (!rebuilt) return;
-      for (const seg of rebuilt) merged.push({ ...seg, index: merged.length });
+      if (unsupported) return; // provider can't group — keep the heuristic transcript
+      if (!rebuilt) continue; // this chunk failed; keep its heuristic segments, move on
+
+      // Progressive swap: rebuild the transcript with this chunk upgraded.
+      parts[c] = rebuilt;
+      const merged: SubtitleSegment[] = [];
+      for (const p of parts) for (const seg of p) merged.push({ ...seg, index: merged.length });
+      this.translateGeneration++; // restart the fill on the new array
+      this.segments = merged;
+      this.setState({ total: merged.length });
+      this.emitTranscript();
+      this.syncTrackMode(true);
+      void this.translateAllInBackground();
       await new Promise((resolve) => setTimeout(resolve, 80));
     }
-    if (generation !== this.smartGeneration || this.state.mode !== 'track' || merged.length === 0) {
-      return;
-    }
-
-    // Swap in the sentence-segmented transcript. Cancel the raw-cue fill first,
-    // then fill any lines still missing a translation.
-    this.translateGeneration++;
-    this.segments = merged;
-    this.setState({ total: merged.length });
-    this.emitTranscript();
-    this.syncTrackMode(true);
-    void this.translateAllInBackground();
   }
 
   /**
