@@ -399,67 +399,65 @@ function QuickTranslate({ actions, label }: { actions: UIActions; label: string 
         role="dialog"
         aria-label="快捷翻译"
       >
-        <div className="lf-qt-dragbar">
-          <GripIcon />
-          <span>拖动移动</span>
-        </div>
-        <div className="lf-qt-cols">
-          <div className="lf-qt-col lf-qt-col-in">
-            <select
-              className="lf-qt-lang"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-              aria-label="输入语言"
-            >
-              {QT_SOURCE.map((l) => (
-                <option key={l.code} value={l.code}>
-                  {l.label}
-                </option>
-              ))}
-            </select>
-            <textarea
-              className="lf-qt-input"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="输入或粘贴要翻译的文本…"
-              autoFocus
-            />
-            <div className="lf-qt-incount">
-              <span>{input.length} 字</span>
-              {input && (
-                <button
-                  className="lf-qt-iconbtn lf-qt-iconbtn-sm"
-                  onClick={() => setInput('')}
-                  title="清空"
-                  aria-label="清空"
-                >
-                  <ClearIcon />
-                </button>
-              )}
+        <div className="lf-qt-main">
+          <div className="lf-qt-cols">
+            <div className="lf-qt-col lf-qt-col-in">
+              <select
+                className="lf-qt-lang"
+                value={from}
+                onChange={(e) => setFrom(e.target.value)}
+                aria-label="输入语言"
+              >
+                {QT_SOURCE.map((l) => (
+                  <option key={l.code} value={l.code}>
+                    {l.label}
+                  </option>
+                ))}
+              </select>
+              <textarea
+                className="lf-qt-input"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="输入或粘贴要翻译的文本…"
+                autoFocus
+              />
+              <div className="lf-qt-incount">
+                <span>{input.length} 字</span>
+                {input && (
+                  <button
+                    className="lf-qt-iconbtn lf-qt-iconbtn-sm"
+                    onClick={() => setInput('')}
+                    title="清空"
+                    aria-label="清空"
+                  >
+                    <ClearIcon />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="lf-qt-col lf-qt-col-out">
+              <select
+                className="lf-qt-lang"
+                value={to}
+                onChange={(e) => setTo(e.target.value)}
+                aria-label="输出语言"
+              >
+                {COMMON_LANGUAGES.map((l) => (
+                  <option key={l.code} value={l.code}>
+                    {l.label}
+                  </option>
+                ))}
+              </select>
+              <div className="lf-qt-output">
+                {loading ? <span className="lf-muted">翻译中…</span> : output}
+              </div>
             </div>
           </div>
 
           <button className="lf-qt-swap" onClick={swap} title="交换语言" aria-label="交换语言">
             <SwapIcon />
           </button>
-
-          <div className="lf-qt-col lf-qt-col-out">
-            <select
-              className="lf-qt-lang"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-              aria-label="输出语言"
-            >
-              {COMMON_LANGUAGES.map((l) => (
-                <option key={l.code} value={l.code}>
-                  {l.label}
-                </option>
-              ))}
-            </select>
-            <div className="lf-qt-output">
-              {loading ? <span className="lf-muted">翻译中…</span> : output}
-            </div>
-          </div>
         </div>
         <div className="lf-qt-footer">
           <span className="lf-muted lf-qt-model">{label || 'LinguaFlow'} · 快捷翻译</span>
@@ -499,17 +497,6 @@ const SwapIcon = () => (
 const ClearIcon = () => (
   <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
     <path d="M6 6l12 12M18 6L6 18" />
-  </svg>
-);
-
-const GripIcon = () => (
-  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
-    <circle cx="8" cy="9" r="1.4" />
-    <circle cx="12" cy="9" r="1.4" />
-    <circle cx="16" cy="9" r="1.4" />
-    <circle cx="8" cy="15" r="1.4" />
-    <circle cx="12" cy="15" r="1.4" />
-    <circle cx="16" cy="15" r="1.4" />
   </svg>
 );
 
