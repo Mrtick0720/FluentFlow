@@ -1,5 +1,9 @@
 import type { SubtitleSegment, SubtitleTrack } from '@/types/models';
-import { rebuildSentences, type SmartSentence } from '@/services/subtitle/smart';
+import {
+  rebuildFromWords,
+  wordsFromSegments,
+  type SmartSentence,
+} from '@/services/subtitle/smart';
 import type { CaptionState, VideoAdapter, VideoAdapterRegistry } from './adapter';
 
 export interface SubtitleViewState {
@@ -277,34 +281,44 @@ export class SubtitleController {
 
   private async smartResegmentInBackground(): Promise<void> {
     const generation = ++this.smartGeneration;
-    const cues = this.segments;
-    if (cues.length < 3 || !this.deps.smartTranslate) return;
-    const WINDOW = 30;
+    if (this.segments.length < 3 || !this.deps.smartTranslate) return;
+    // Word-level: re-cut sentences at any word (fixes boundary words) and time
+    // them from the covered words.
+    const { words, end } = wordsFromSegments(this.segments);
+    const WINDOW = 180; // words per LLM call
     const merged: SubtitleSegment[] = [];
-    for (let i = 0; i < cues.length; i += WINDOW) {
+    for (let i = 0; i < words.length; i += WINDOW) {
       if (generation !== this.smartGeneration || this.state.mode !== 'track') return;
-      const window = cues.slice(i, i + WINDOW);
+      const win = words.slice(i, i + WINDOW);
+      const winEnd = words[i + WINDOW]?.start ?? end;
       let rebuilt: SubtitleSegment[] | null = null;
       let unsupported = false;
-      try {
-        const sentences = await this.deps.smartTranslate(window.map((c) => c.text));
-        if (generation !== this.smartGeneration) return;
-        if (sentences === null) unsupported = true;
-        else rebuilt = rebuildSentences(window, sentences);
-      } catch {
-        rebuilt = null;
+      for (let attempt = 0; attempt < 2 && !rebuilt; attempt++) {
+        try {
+          const sentences = await this.deps.smartTranslate(win.map((w) => w.text));
+          if (generation !== this.smartGeneration) return;
+          if (sentences === null) {
+            unsupported = true;
+            break;
+          }
+          rebuilt = rebuildFromWords(win, winEnd, sentences);
+        } catch {
+          rebuilt = null;
+        }
       }
-      // Provider can't group (not an LLM) — keep the raw cues, no swap.
-      if (unsupported && i === 0) return;
-      // Fallback for a failed window: keep its raw cues (translated separately).
-      const part = rebuilt ?? window.map((c) => ({ ...c }));
-      for (const seg of part) merged.push({ ...seg, index: merged.length });
+      if (unsupported && i === 0) return; // provider can't group — keep raw cues
+      // If a window can't be grouped even after a retry, abandon the upgrade and
+      // keep the existing (usable) heuristic transcript rather than half-do it.
+      if (!rebuilt) return;
+      for (const seg of rebuilt) merged.push({ ...seg, index: merged.length });
       await new Promise((resolve) => setTimeout(resolve, 80));
     }
-    if (generation !== this.smartGeneration || this.state.mode !== 'track') return;
+    if (generation !== this.smartGeneration || this.state.mode !== 'track' || merged.length === 0) {
+      return;
+    }
 
     // Swap in the sentence-segmented transcript. Cancel the raw-cue fill first,
-    // then fill any untranslated (fallback) sentences.
+    // then fill any lines still missing a translation.
     this.translateGeneration++;
     this.segments = merged;
     this.setState({ total: merged.length });
