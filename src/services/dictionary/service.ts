@@ -4,6 +4,7 @@ import type { AIService } from '@/services/ai/service';
 import { getSettings } from '@/services/storage/settingsStore';
 import { TranslationError } from '@/services/translation/provider';
 import type { TranslationService } from '@/services/translation/service';
+import type { ProviderSelection } from '@/shared/settings';
 import type { DictionaryEntry, Vocabulary } from '@/types/models';
 
 const API = 'https://api.dictionaryapi.dev/api/v2/entries/en/';
@@ -29,14 +30,48 @@ export class DictionaryService {
       if (hit) return hit;
     }
 
+    // Base entry only: dictionary fetch + fast-MT glosses. AI enrichment (CEFR,
+    // collocations) is a separate call (enrich) the popup fires after it's
+    // already visible, so the card never blocks on the LLM. Glosses use the
+    // fast page-translation engine, not the (possibly slow) sentence LLM.
     const entry = await this.fetchBase(normalized);
-    await this.translateGlosses(entry, settings.targetLanguage);
-    await this.enrich(entry);
+    await this.translateGlosses(entry, settings.targetLanguage, settings.pageTranslationProvider);
 
     if (settings.cache.enabled) {
       await cacheSet('dictionary', cacheKey, entry, settings.cache.ttlHours * 3600_000);
     }
     return entry;
+  }
+
+  /**
+   * AI enrichment for a word (CEFR level + collocations). Called separately by
+   * the popup after the base entry renders, so it never blocks the card.
+   * Best-effort: returns an empty object when no AI provider is configured or
+   * on any failure. The AI call itself is cached (see AIService).
+   */
+  async enrich(word: string): Promise<{ cefr?: Vocabulary['cefr']; collocations?: string[] }> {
+    const normalized = word.trim().toLowerCase();
+    if (!normalized || !(await this.ai.isConfigured())) return {};
+    try {
+      const raw = await this.ai.complete(
+        dictionaryEnrichmentPrompt(normalized),
+        `dict-enrich|${normalized}`,
+      );
+      const parsed = JSON.parse(raw.replace(/```(?:json)?|```/g, '').trim()) as {
+        cefr?: Vocabulary['cefr'];
+        collocations?: string[];
+      };
+      const out: { cefr?: Vocabulary['cefr']; collocations?: string[] } = {};
+      if (parsed.cefr && ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'].includes(parsed.cefr)) {
+        out.cefr = parsed.cefr;
+      }
+      if (Array.isArray(parsed.collocations)) {
+        out.collocations = parsed.collocations.filter((c) => typeof c === 'string').slice(0, 6);
+      }
+      return out;
+    } catch {
+      return {};
+    }
   }
 
   private async fetchBase(word: string): Promise<DictionaryEntry> {
@@ -54,13 +89,18 @@ export class DictionaryService {
     return parseDictionaryApiResponse(word, await res.json());
   }
 
-  private async translateGlosses(entry: DictionaryEntry, targetLang: string): Promise<void> {
+  private async translateGlosses(
+    entry: DictionaryEntry,
+    targetLang: string,
+    provider?: ProviderSelection,
+  ): Promise<void> {
     const texts = [entry.word, ...entry.senses.map((s) => s.meaning)];
     try {
       const { translations } = await this.translation.translate({
         texts,
         from: 'en',
         to: targetLang,
+        provider,
       });
       // First item: gloss for the word itself when there are no senses.
       if (entry.senses.length === 0 && translations[0]) {
@@ -79,27 +119,6 @@ export class DictionaryService {
     }
   }
 
-  private async enrich(entry: DictionaryEntry): Promise<void> {
-    if (!(await this.ai.isConfigured())) return;
-    try {
-      const raw = await this.ai.complete(
-        dictionaryEnrichmentPrompt(entry.word),
-        `dict-enrich|${entry.word}`,
-      );
-      const parsed = JSON.parse(raw.replace(/```(?:json)?|```/g, '').trim()) as {
-        cefr?: Vocabulary['cefr'];
-        collocations?: string[];
-      };
-      if (parsed.cefr && ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'].includes(parsed.cefr)) {
-        entry.cefr = parsed.cefr;
-      }
-      if (Array.isArray(parsed.collocations)) {
-        entry.collocations = parsed.collocations.filter((c) => typeof c === 'string').slice(0, 6);
-      }
-    } catch {
-      // Enrichment is best-effort.
-    }
-  }
 }
 
 export function parseDictionaryApiResponse(word: string, data: unknown): DictionaryEntry {

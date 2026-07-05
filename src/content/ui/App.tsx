@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { COMMON_LANGUAGES } from '@/shared/constants';
-import { uiStore, type UIState } from './store';
+import { uiStore, type AnchorRect, type UIState } from './store';
+import { ANCHOR_GAP, computePopupPlacement } from './popupLayout';
 import { getSubtitleOverlayGeometry } from './subtitleLayout';
 
 export interface UIActions {
@@ -37,6 +38,7 @@ export interface UIActions {
   openSettings(): void;
   quickTranslate(): void;
   immersiveTranslate(): void;
+  aiQualityTranslate(): void;
   translateReplace(): void;
   closeQuickTranslate(): void;
   translateText(text: string, from: string, to: string): Promise<string>;
@@ -67,30 +69,60 @@ function useUI(): UIState {
   return useSyncExternalStore(uiStore.subscribe, uiStore.get);
 }
 
-function popupPosition(x: number, y: number, width = 380): CSSProperties {
-  return {
-    left: Math.max(8, Math.min(x, window.innerWidth - width - 12)),
-    top: Math.min(y + 10, window.innerHeight - 160),
-  };
+/** A point-anchor fallback for popups opened without a selection rect. */
+function pointAnchor(x: number, y: number): AnchorRect {
+  return { top: y, bottom: y, left: x };
 }
 
 /**
- * Make a word/sentence card draggable. Starts at its anchor position; dragging
- * any non-interactive part of the card repositions it (buttons and the
- * scrollable answer keep working).
+ * Place a popup relative to its selection so the whole thing stays on screen:
+ * prefer one side (below for cards, above for the toolbar), flip to the other
+ * side when there isn't room, then clamp within the viewport. Re-runs when the
+ * popup resizes (e.g. enrichment loads) or the window resizes. Measures the real
+ * element via a ref, so it never relies on a guessed height. Dragging any
+ * non-interactive part repositions it and pins that manual position.
  */
-function useDraggableCard(x: number, y: number, width = 380) {
-  const base = popupPosition(x, y, width);
+function usePopupPlacement(
+  anchor: AnchorRect,
+  opts: { prefer: 'above' | 'below'; draggable?: boolean; width?: number } = { prefer: 'below' },
+) {
+  const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const draggedRef = useRef(false);
   const dragRef = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null);
 
-  const style: CSSProperties = { ...(pos ?? base), cursor: 'move' };
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    draggedRef.current = false; // a new anchor is a fresh popup
+    const place = () => {
+      if (draggedRef.current) return;
+      setPos(
+        computePopupPlacement(
+          anchor,
+          { width: el.offsetWidth || opts.width || 380, height: el.offsetHeight },
+          { width: window.innerWidth, height: window.innerHeight },
+          opts.prefer,
+        ),
+      );
+    };
+    place();
+    const ro = new ResizeObserver(place);
+    ro.observe(el);
+    window.addEventListener('resize', place);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', place);
+    };
+  }, [anchor.top, anchor.bottom, anchor.left, opts.prefer, opts.width]);
 
   const onPointerDown = (e: ReactPointerEvent) => {
+    if (!opts.draggable) return;
     const el = e.target as HTMLElement;
     if (el.closest('button, a, input, textarea, select, [contenteditable], .lf-ai-answer')) return;
-    const start = pos ?? { left: Number(base.left) || 0, top: Number(base.top) || 0 };
+    const start = pos ?? { left: anchor.left, top: anchor.bottom + ANCHOR_GAP };
     dragRef.current = { sx: e.clientX, sy: e.clientY, ox: start.left, oy: start.top };
+    draggedRef.current = true;
     const onMove = (ev: PointerEvent) => {
       const d = dragRef.current;
       if (!d) return;
@@ -108,7 +140,12 @@ function useDraggableCard(x: number, y: number, width = 380) {
     window.addEventListener('pointerup', onUp);
   };
 
-  return { style, onPointerDown };
+  // Before the first measurement, render off-screen to avoid a flash at a
+  // wrong spot (useLayoutEffect sets the real position before paint).
+  const style: CSSProperties = pos
+    ? { left: pos.left, top: pos.top, ...(opts.draggable ? { cursor: 'move' } : {}) }
+    : { left: anchor.left, top: -9999 };
+  return { ref, style, onPointerDown };
 }
 
 export function App({ actions }: { actions: UIActions }) {
@@ -135,12 +172,20 @@ export function App({ actions }: { actions: UIActions }) {
 }
 
 function SelectionToolbar({ ui, actions }: { ui: UIState; actions: UIActions }) {
-  const { x, y, text } = ui.toolbar!;
+  const t = ui.toolbar!;
+  const text = t.text;
   const isWord = /^[A-Za-z][A-Za-z'-]*$/.test(text.trim());
+  // Prefer below the selection so we don't collide with the site's own
+  // (usually-above) selection menu; flip/clamp like the cards otherwise.
+  const place = usePopupPlacement(t.anchor ?? pointAnchor(t.x, t.y), {
+    prefer: 'below',
+    width: 240,
+  });
   return (
     <div
+      ref={place.ref}
       className="lf-toolbar"
-      style={{ left: Math.min(x, window.innerWidth - 240), top: Math.max(8, y - 44) }}
+      style={place.style}
       role="toolbar"
       aria-label="LinguaFlow selection actions"
     >
@@ -165,12 +210,16 @@ function SelectionToolbar({ ui, actions }: { ui: UIState; actions: UIActions }) 
 
 function WordCard({ ui, actions }: { ui: UIState; actions: UIActions }) {
   const card = ui.wordCard!;
-  const drag = useDraggableCard(card.x, card.y);
+  const place = usePopupPlacement(card.anchor ?? pointAnchor(card.x, card.y), {
+    prefer: 'below',
+    draggable: true,
+  });
   return (
     <div
+      ref={place.ref}
       className="lf-card"
-      style={drag.style}
-      onPointerDown={drag.onPointerDown}
+      style={place.style}
+      onPointerDown={place.onPointerDown}
       role="dialog"
       aria-label={`Dictionary: ${card.word}`}
     >
@@ -204,6 +253,11 @@ function WordCard({ ui, actions }: { ui: UIState; actions: UIActions }) {
       {card.entry?.collocations && card.entry.collocations.length > 0 && (
         <div className="lf-muted" style={{ marginTop: 6 }}>
           常见搭配：{card.entry.collocations.join(' · ')}
+        </div>
+      )}
+      {card.entry && card.enrichLoading && (
+        <div className="lf-row" style={{ marginTop: 6 }}>
+          <span className="lf-spinner" /> <span className="lf-muted">补充词汇信息…</span>
         </div>
       )}
       {card.context && (
@@ -247,12 +301,16 @@ function WordCard({ ui, actions }: { ui: UIState; actions: UIActions }) {
 
 function SentenceCard({ ui, actions }: { ui: UIState; actions: UIActions }) {
   const card = ui.sentenceCard!;
-  const drag = useDraggableCard(card.x, card.y);
+  const place = usePopupPlacement(card.anchor ?? pointAnchor(card.x, card.y), {
+    prefer: 'below',
+    draggable: true,
+  });
   return (
     <div
+      ref={place.ref}
       className="lf-card"
-      style={drag.style}
-      onPointerDown={drag.onPointerDown}
+      style={place.style}
+      onPointerDown={place.onPointerDown}
       role="dialog"
       aria-label="Sentence learning"
     >
@@ -519,6 +577,7 @@ function PlayerMenu({ ui, actions }: { ui: UIState; actions: UIActions }) {
       ? [{ label: '还原整页', onClick: actions.immersiveTranslate }]
       : [
           { label: '双语翻译（原文 + 译文）', onClick: actions.immersiveTranslate },
+          { label: 'AI 精译（高质量双语）', onClick: actions.aiQualityTranslate },
           { label: '翻译成中文（替换原文）', onClick: actions.translateReplace },
         ]),
     { label: '快捷翻译', onClick: actions.quickTranslate },

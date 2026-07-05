@@ -47,12 +47,26 @@ const SKIP_CLOSEST = [
 ].join(',');
 
 /**
+ * Heading-like elements that AREN'T semantic headings — big styled <span>/<div>
+ * titles used by many CMSs and reader themes (e.g. HBR renders its headline as
+ * `<span class="…headline-title">`, not an <h1>). CSS-module hashing keeps the
+ * semantic name, so `[class*="title"]` still matches `…__headline-title`.
+ */
+const HEADING_LIKE_SELECTOR = [
+  '[role="heading"]',
+  '[class*="headline" i]',
+  '[class*="title" i]',
+  '[class*="heading" i]',
+].join(',');
+
+/**
  * Collect block-level elements worth translating inside `root`.
  * Leaf-most candidates win (an <li> containing a <p> yields the <p>).
  */
 export function collectTranslatableBlocks(root: ParentNode): HTMLElement[] {
   const candidates = [...root.querySelectorAll<HTMLElement>(CANDIDATE_SELECTOR)];
   const blocks: HTMLElement[] = [];
+  const seen = new Set<HTMLElement>();
   for (const el of candidates) {
     if (el.closest(SKIP_CLOSEST)) continue;
     if (el.querySelector(CANDIDATE_SELECTOR)) continue; // keep leaf-most only
@@ -60,8 +74,39 @@ export function collectTranslatableBlocks(root: ParentNode): HTMLElement[] {
     if (text.length < 2 || !/[a-zA-Z]{2,}/.test(text)) continue;
     if (!isRenderable(el)) continue;
     blocks.push(el);
+    seen.add(el);
+  }
+  for (const el of root.querySelectorAll<HTMLElement>(HEADING_LIKE_SELECTOR)) {
+    if (seen.has(el) || !isHeadingLikeBlock(el, seen)) continue;
+    blocks.push(el);
+    seen.add(el);
   }
   return blocks;
+}
+
+/**
+ * Is `el` a styled non-semantic heading we should translate? Guarded tightly so
+ * broad `[class*="title"]` matching can't drag in nav labels, controls, or
+ * wrappers around whole paragraphs: it must be a short, renderable, leaf-most
+ * text block at least as large as body text, outside skip/interactive regions.
+ */
+function isHeadingLikeBlock(el: HTMLElement, seen: Set<HTMLElement>): boolean {
+  if (el.closest(SKIP_CLOSEST)) return false;
+  // A control or link — translating in place would risk its handlers/hrefs.
+  if (el.closest('a,button,[role="button"],[role="tab"],[role="menuitem"],input,label')) return false;
+  // Leaf-most: no semantic candidate and no nested heading-like inside.
+  if (el.querySelector(CANDIDATE_SELECTOR) || el.querySelector(HEADING_LIKE_SELECTOR)) return false;
+  const text = el.textContent?.trim() ?? '';
+  // Headings are short; a long "title" region usually wraps real paragraphs.
+  if (text.length < 2 || text.length > 200 || !/[a-zA-Z]{2,}/.test(text)) return false;
+  // Skip if an already-collected block sits inside (avoid nesting duplicates).
+  for (const b of seen) if (el !== b && el.contains(b)) return false;
+  if (!isRenderable(el)) return false;
+  const cs = getComputedStyle(el);
+  if (cs.display === 'inline') return false; // must render as a block/heading
+  const rootSize = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  if ((parseFloat(cs.fontSize) || 0) < rootSize) return false; // not below body text
+  return true;
 }
 
 type WithCheckVisibility = HTMLElement & { checkVisibility?: (options?: object) => boolean };

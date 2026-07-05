@@ -12,6 +12,7 @@ import type {
 } from '@/types/models';
 import type { ProviderSelection, UserSettings } from '@/shared/settings';
 import type { SmartSentence } from '@/services/subtitle/smart';
+import type { Glossary, QualitySegment } from '@/services/translation/quality';
 
 /**
  * Typed RPC between contexts. Every request type maps to its request/response
@@ -30,9 +31,26 @@ export interface RequestMap {
     };
     res: { translations: string[]; provider: TranslationProviderId };
   };
+  /** High-quality AI page translation: LLM + surrounding context + shared glossary. */
+  'translation.translateQuality': {
+    req: {
+      segments: QualitySegment[];
+      from: LanguageCode;
+      to: LanguageCode;
+      provider?: ProviderSelection;
+      domain?: string;
+      glossary?: Glossary;
+    };
+    res: { translations: string[]; glossary: Glossary; domain?: string };
+  };
   'dictionary.lookup': {
     req: { word: string; context?: string };
     res: DictionaryEntry;
+  };
+  /** AI enrichment (CEFR + collocations) fetched after the base entry renders. */
+  'dictionary.enrich': {
+    req: { word: string };
+    res: { cefr?: Vocabulary['cefr']; collocations?: string[] };
   };
   'vocabulary.add': { req: Omit<Vocabulary, 'id' | 'createdAt'>; res: Vocabulary };
   'vocabulary.list': {

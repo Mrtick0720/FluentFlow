@@ -141,11 +141,28 @@ export function Options() {
 
       <Section title="翻译">
         <div className="grid grid-cols-2 gap-3">
-          <Field label="默认引擎">
+          <Field label="划词 / 快捷翻译引擎">
             <Select
               className="w-full"
               value={settings.translationProvider}
               onChange={(e) => void update({ translationProvider: e.target.value as ProviderSelection })}
+            >
+              <option value="google">Google（免费，无需密钥）</option>
+              <option value="deepl">DeepL</option>
+              <option value="openai">OpenAI</option>
+              <option value="azure">Azure Translator</option>
+              {settings.customEndpoints.map((ep) => (
+                <option key={ep.id} value={`custom:${ep.id}`}>
+                  {ep.name || ep.model || '自定义端点'}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="整页翻译引擎" hint="建议用快速机器翻译（Google/DeepL）；大模型端点整页翻译会很慢">
+            <Select
+              className="w-full"
+              value={settings.pageTranslationProvider}
+              onChange={(e) => void update({ pageTranslationProvider: e.target.value as ProviderSelection })}
             >
               <option value="google">Google（免费，无需密钥）</option>
               <option value="deepl">DeepL</option>
@@ -504,6 +521,9 @@ function CustomEndpointsEditor({
       customEndpoints: endpoints.filter((e) => e.id !== id),
       ...(settings.translationProvider === `custom:${id}`
         ? { translationProvider: 'google' as ProviderSelection }
+        : {}),
+      ...(settings.pageTranslationProvider === `custom:${id}`
+        ? { pageTranslationProvider: 'google' as ProviderSelection }
         : {}),
     });
 

@@ -5,7 +5,19 @@ import type { ProviderSelection, ProviderSettings, UserSettings } from '@/shared
 import type { LanguageCode, TranslationProviderId } from '@/types/models';
 import { batchBy } from '@/utils/async';
 import { fnv1a64 } from '@/utils/hash';
+import { TranslationError } from './provider';
+import { qualityTranslate, type Glossary, type QualitySegment } from './quality';
 import type { ProviderRegistry } from './registry';
+
+export interface QualityTranslateRequest {
+  segments: QualitySegment[];
+  from: LanguageCode;
+  to: LanguageCode;
+  provider?: ProviderSelection;
+  domain?: string;
+  glossary?: Glossary;
+  refresh?: boolean;
+}
 
 export interface TranslateRequest {
   texts: string[];
@@ -100,5 +112,69 @@ export class TranslationService {
     );
 
     return { translations: results, provider: providerId };
+  }
+
+  /**
+   * High-quality "AI 精译" translation: an LLM translates each paragraph with its
+   * surrounding context and a shared glossary, so terminology stays consistent
+   * and titles read naturally. Batches run sequentially so the glossary grows in
+   * order. Requires an OpenAI-compatible provider.
+   */
+  async translateQuality(
+    req: QualityTranslateRequest,
+  ): Promise<{ translations: string[]; glossary: Glossary; domain?: string }> {
+    const settings = await getSettings();
+    const selection = req.provider ?? settings.translationProvider;
+    const { implId, config } = resolveProvider(selection, settings);
+    if (implId !== 'openai' && implId !== 'custom') {
+      throw new TranslationError(
+        'provider_error',
+        'AI 精译需要 OpenAI 兼容的大模型端点，请在设置中配置后重试',
+      );
+    }
+    const cacheEnabled = settings.cache.enabled;
+    const ttlMs = settings.cache.ttlHours * 3600_000;
+
+    const results = new Array<string>(req.segments.length);
+    const missing: Array<{ index: number; seg: QualitySegment; key: string }> = [];
+    for (let i = 0; i < req.segments.length; i++) {
+      const seg = req.segments[i]!;
+      const key = fnv1a64(`q|${selection}|${req.from}|${req.to}|${seg.isTitle ? 'T' : ''}|${seg.text}`);
+      if (cacheEnabled && !req.refresh) {
+        const hit = await cacheGet<string>('translation', key);
+        if (hit !== undefined) {
+          results[i] = hit;
+          continue;
+        }
+      }
+      missing.push({ index: i, seg, key });
+    }
+
+    let glossary = req.glossary ?? {};
+    let domain = req.domain;
+    // Context inflates each request, so keep batches small; run them in order so
+    // the glossary accumulates and later paragraphs inherit earlier choices.
+    const batches = batchBy(
+      missing,
+      12,
+      3000,
+      (m) => m.seg.text.length + (m.seg.before?.length ?? 0) + (m.seg.after?.length ?? 0),
+    );
+    for (const batch of batches) {
+      const out = await qualityTranslate(
+        implId,
+        { segments: batch.map((m) => m.seg), from: req.from, to: req.to, domain, glossary },
+        config,
+      );
+      glossary = { ...glossary, ...out.glossary };
+      domain = domain ?? out.domain; // lock the domain in after the first inference
+      for (let i = 0; i < batch.length; i++) {
+        const { index, key } = batch[i]!;
+        const value = out.translations[i] ?? '';
+        results[index] = value;
+        if (cacheEnabled && value) await cacheSet('translation', key, value, ttlMs);
+      }
+    }
+    return { translations: results, glossary, domain };
   }
 }

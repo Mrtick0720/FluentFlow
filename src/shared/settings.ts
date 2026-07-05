@@ -52,7 +52,20 @@ export interface UserSettings {
   targetLanguage: LanguageCode;
   sourceLanguage: LanguageCode; // 'auto' to detect
   displayMode: DisplayMode;
+  /** Provider for selection / quick-translate / sentence cards. */
   translationProvider: ProviderSelection;
+  /**
+   * Provider for bulk whole-page translation. Kept separate so a slow LLM
+   * endpoint (great for word/sentence explanations) doesn't make整页翻译 crawl —
+   * defaults to fast MT (Google) like Trancy. Falls back to translationProvider.
+   */
+  pageTranslationProvider: ProviderSelection;
+  /**
+   * Whole-page translation quality. 'fast' = machine translation
+   * (pageTranslationProvider). 'ai' = LLM with context + shared glossary +
+   * title optimization (slower, premium). Default fast.
+   */
+  pageTranslationMode: 'fast' | 'ai';
   providers: Partial<Record<TranslationProviderId, ProviderSettings>>;
   /** Saved custom endpoints, each selectable as `custom:<id>`. */
   customEndpoints: CustomEndpoint[];
@@ -87,6 +100,8 @@ export const DEFAULT_SETTINGS: UserSettings = {
   sourceLanguage: 'auto',
   displayMode: 'bilingual',
   translationProvider: 'google',
+  pageTranslationProvider: 'google',
+  pageTranslationMode: 'fast',
   providers: {},
   customEndpoints: [],
   ai: { kind: 'none' },

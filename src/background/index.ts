@@ -103,7 +103,9 @@ async function setTranslatingIcon(tabId: number, active: boolean): Promise<void>
 
 const router = new MessageRouter()
   .on('translation.translate', (req) => translationService.translate(req))
+  .on('translation.translateQuality', (req) => translationService.translateQuality(req))
   .on('dictionary.lookup', ({ word, context }) => dictionaryService.lookup(word, context))
+  .on('dictionary.enrich', ({ word }) => dictionaryService.enrich(word))
   .on('vocabulary.add', (req) => vocabulary.add(req))
   .on('vocabulary.list', (req) => vocabulary.list(req))
   .on('vocabulary.update', (req) => vocabulary.update(req))

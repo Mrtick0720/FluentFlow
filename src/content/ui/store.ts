@@ -2,13 +2,24 @@ import type { SubtitleViewState } from '@/services/video/controller';
 import type { SubtitleStyle } from '@/shared/settings';
 import type { DictionaryEntry, SubtitleSegment } from '@/types/models';
 
+/** The on-screen rectangle of the selection a popup is anchored to. */
+export interface AnchorRect {
+  top: number;
+  bottom: number;
+  left: number;
+}
+
 export interface WordCardState {
   x: number;
   y: number;
+  /** Selection rect, so the card can flip above/below and stay on screen. */
+  anchor?: AnchorRect;
   word: string;
   context?: string;
   loading: boolean;
   entry?: DictionaryEntry;
+  /** AI enrichment (CEFR + collocations) still loading after the base entry. */
+  enrichLoading?: boolean;
   error?: string;
   aiText?: string;
   aiLoading?: boolean;
@@ -18,6 +29,7 @@ export interface WordCardState {
 export interface SentenceCardState {
   x: number;
   y: number;
+  anchor?: AnchorRect;
   text: string;
   translation?: string;
   loading: boolean;
@@ -29,7 +41,7 @@ export interface SentenceCardState {
 }
 
 export interface UIState {
-  toolbar: { x: number; y: number; text: string } | null;
+  toolbar: { x: number; y: number; text: string; anchor?: AnchorRect } | null;
   wordCard: WordCardState | null;
   sentenceCard: SentenceCardState | null;
   videoDetected: boolean;

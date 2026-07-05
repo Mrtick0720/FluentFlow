@@ -17,13 +17,14 @@ import {
 import { VideoAdapterRegistry } from '@/services/video/adapter';
 import { SubtitleController } from '@/services/video/controller';
 import { sendRequest, type Response, type TabEnvelope } from '@/shared/messages';
-import type { UserSettings } from '@/shared/settings';
+import type { ProviderSelection, UserSettings } from '@/shared/settings';
+import type { Glossary, QualitySegment } from '@/services/translation/quality';
 import type { DisplayMode } from '@/types/models';
 import { extractPageText, sentenceAround } from '@/utils/dom';
 import { PageTranslator } from './pageTranslator';
 import { injectYouTubePlayerButton } from './youtubeButton';
 import { App, type UIActions } from './ui/App';
-import { showToast, uiStore } from './ui/store';
+import { showToast, uiStore, type AnchorRect } from './ui/store';
 import {
   isFrameMessage,
   makeFrameCommand,
@@ -69,11 +70,52 @@ async function main() {
     return res.translations;
   };
 
+  // Whole-page translation. 'fast' uses machine translation (its own fast
+  // provider) so a slow LLM chosen for selection/explanations doesn't make整页
+  // 翻译 crawl. 'ai' uses the LLM with context + a per-page glossary threaded
+  // across batches for terminology consistency.
+  let pageMode: 'fast' | 'ai' = settings.pageTranslationMode;
+  let pageGlossary: Glossary = {};
+  // Domain inferred by the first AI batch, reused by the rest (no re-inference).
+  let pageDomain: string | undefined;
+
+  // Resolve an OpenAI-compatible endpoint for AI 精译 from the user's config.
+  const aiTranslationProvider = (): ProviderSelection => {
+    const p = settings.translationProvider;
+    if (p === 'openai' || p.startsWith('custom:')) return p;
+    const first = settings.customEndpoints[0];
+    return first ? (`custom:${first.id}` as ProviderSelection) : 'openai';
+  };
+
+  const translatePage = async (segments: QualitySegment[]) => {
+    if (pageMode === 'ai') {
+      const res = await sendRequest('translation.translateQuality', {
+        segments,
+        from: settings.sourceLanguage,
+        to: settings.targetLanguage,
+        provider: aiTranslationProvider(),
+        domain: pageDomain,
+        glossary: pageGlossary,
+      });
+      if (res.glossary) pageGlossary = { ...pageGlossary, ...res.glossary };
+      if (!pageDomain && res.domain) pageDomain = res.domain; // lock in after batch 1
+      return res.translations;
+    }
+    const res = await sendRequest('translation.translate', {
+      texts: segments.map((s) => s.text),
+      from: settings.sourceLanguage,
+      to: settings.targetLanguage,
+      provider: settings.pageTranslationProvider,
+    });
+    return res.translations;
+  };
+
   let errorToastShown = false;
   const translator = new PageTranslator({
-    translate,
+    translate: translatePage,
     targetLanguage: settings.targetLanguage,
     mode: settings.displayMode,
+    quality: settings.pageTranslationMode === 'ai',
     style: settings.translationStyle,
     fontScale: settings.fontScale,
     onProgress: (done, total) => uiStore.set({ progress: { done, total } }),
@@ -104,10 +146,16 @@ async function main() {
   // Translate the whole page in a chosen mode. When it's already active this
   // just toggles it off (restore). 'bilingual' keeps the original above each
   // translation; 'translation-only' replaces the original in place (Chrome-style).
-  function translatePageAs(mode: DisplayMode) {
+  function translatePageAs(mode: DisplayMode, quality: 'fast' | 'ai' = 'fast') {
     if (!translator.active) {
       translator.setMode(mode);
-      void sendRequest('settings.set', { patch: { displayMode: mode } }).catch(() => {});
+      pageMode = quality;
+      pageGlossary = {}; // fresh glossary + domain per translation run
+      pageDomain = undefined;
+      translator.setQuality(quality === 'ai');
+      void sendRequest('settings.set', {
+        patch: { displayMode: mode, pageTranslationMode: quality },
+      }).catch(() => {});
     }
     togglePage();
   }
@@ -370,18 +418,54 @@ async function main() {
 
   /* ---------- word & sentence cards ---------- */
 
-  async function openWordCard(word: string, context: string | undefined, x: number, y: number) {
+  async function openWordCard(
+    word: string,
+    context: string | undefined,
+    x: number,
+    y: number,
+    anchor?: AnchorRect,
+  ) {
+    const aiOn = settings.ai.kind !== 'none';
     uiStore.set({
-      wordCard: { x, y, word, context, loading: true, saved: false },
+      wordCard: { x, y, anchor, word, context, loading: true, saved: false },
       toolbar: null,
     });
     try {
       const entry = await sendRequest('dictionary.lookup', { word, context });
+      // Show the base entry (word, IPA, translated definitions) immediately;
+      // the AI enrichment (CEFR + collocations) streams in without blocking.
       uiStore.set((prev) =>
         prev.wordCard?.word === word
-          ? { wordCard: { ...prev.wordCard, entry, loading: false } }
+          ? { wordCard: { ...prev.wordCard, entry, loading: false, enrichLoading: aiOn } }
           : {},
       );
+      if (aiOn) {
+        sendRequest('dictionary.enrich', { word })
+          .then((enrichment) =>
+            uiStore.set((prev) =>
+              prev.wordCard?.word === word && prev.wordCard.entry
+                ? {
+                    wordCard: {
+                      ...prev.wordCard,
+                      entry: {
+                        ...prev.wordCard.entry,
+                        cefr: enrichment.cefr ?? prev.wordCard.entry.cefr,
+                        collocations: enrichment.collocations ?? prev.wordCard.entry.collocations,
+                      },
+                      enrichLoading: false,
+                    },
+                  }
+                : {},
+            ),
+          )
+          .catch(() =>
+            uiStore.set((prev) =>
+              prev.wordCard?.word === word
+                ? { wordCard: { ...prev.wordCard, enrichLoading: false } }
+                : {},
+            ),
+          );
+      }
     } catch (err) {
       uiStore.set((prev) =>
         prev.wordCard?.word === word
@@ -397,9 +481,9 @@ async function main() {
     }
   }
 
-  async function openSentenceCard(text: string, x: number, y: number) {
+  async function openSentenceCard(text: string, x: number, y: number, anchor?: AnchorRect) {
     uiStore.set({
-      sentenceCard: { x, y, text, loading: true, saved: false },
+      sentenceCard: { x, y, anchor, text, loading: true, saved: false },
       toolbar: null,
     });
     try {
@@ -434,12 +518,19 @@ async function main() {
     }
   }
 
-  function currentSelectionInfo(): { text: string; x: number; y: number } | null {
+  function currentSelectionInfo():
+    | { text: string; x: number; y: number; anchor: AnchorRect }
+    | null {
     const selection = window.getSelection();
     const text = selection?.toString().replace(/\s+/g, ' ').trim() ?? '';
     if (!text || !selection || selection.rangeCount === 0) return null;
     const rect = selection.getRangeAt(0).getBoundingClientRect();
-    return { text, x: rect.left, y: rect.bottom };
+    return {
+      text,
+      x: rect.left,
+      y: rect.bottom,
+      anchor: { top: rect.top, bottom: rect.bottom, left: rect.left },
+    };
   }
 
   /* ---------- UI actions ---------- */
@@ -448,16 +539,16 @@ async function main() {
     togglePage,
     toolbarTranslate() {
       const t = uiStore.get().toolbar;
-      if (t) void openSentenceCard(t.text, t.x, t.y);
+      if (t) void openSentenceCard(t.text, t.x, t.y, t.anchor);
     },
     toolbarLookup() {
       const t = uiStore.get().toolbar;
-      if (t) void openWordCard(t.text.trim(), undefined, t.x, t.y);
+      if (t) void openWordCard(t.text.trim(), undefined, t.x, t.y, t.anchor);
     },
     toolbarExplain() {
       const t = uiStore.get().toolbar;
       if (!t) return;
-      void openSentenceCard(t.text, t.x, t.y).then(() => actions.sentenceAI('grammar'));
+      void openSentenceCard(t.text, t.x, t.y, t.anchor).then(() => actions.sentenceAI('grammar'));
     },
     toolbarSave() {
       const t = uiStore.get().toolbar;
@@ -661,10 +752,12 @@ async function main() {
       const res = await sendRequest('translation.translate', { texts: [text], from, to });
       return res.translations[0] ?? '';
     },
-    // 双语翻译: original on top, translation below.
+    // 双语翻译: original on top, translation below (fast machine translation).
     immersiveTranslate: () => translatePageAs('bilingual'),
     // 翻译成中文（替换原文），like Chrome's built-in page translate.
     translateReplace: () => translatePageAs('translation-only'),
+    // AI 精译: LLM with context + glossary + title optimization (premium, slower).
+    aiQualityTranslate: () => translatePageAs('bilingual', 'ai'),
     saveFabPos: (pos) => {
       uiStore.set({ fabPos: pos });
       void sendRequest('settings.set', { patch: { fabPos: pos } }).catch(() => {});
@@ -699,13 +792,22 @@ async function main() {
 
   /* ---------- selection & word events ---------- */
 
+  // A double-click also fires mouseup; this suppresses the toolbar that mouseup
+  // would otherwise raise, so a double-clicked word opens only the dictionary card.
+  let suppressToolbarUntil = 0;
+
   document.addEventListener('mouseup', (e) => {
     if (isOwnEvent(e) || !settings.selectionEnabled) return;
     // Defer so the selection is final (click clears, dblclick sets).
     setTimeout(() => {
+      if (Date.now() < suppressToolbarUntil) return; // part of a double-click
       const info = currentSelectionInfo();
-      if (info && info.text.length <= 1200 && /[a-zA-Z]/.test(info.text)) {
-        uiStore.set({ toolbar: { x: info.x, y: info.y, text: info.text } });
+      // The toolbar is for a hand-selected phrase/sentence. A single word is
+      // handled by double-click → dictionary card, so it never raises the
+      // toolbar (avoids the stacked-UI clutter).
+      const isPhrase = !!info && /\s/.test(info.text.trim());
+      if (info && isPhrase && info.text.length <= 1200 && /[a-zA-Z]/.test(info.text)) {
+        uiStore.set({ toolbar: { x: info.x, y: info.y, text: info.text, anchor: info.anchor } });
       } else {
         uiStore.set({ toolbar: null });
       }
@@ -722,10 +824,26 @@ async function main() {
     const selection = window.getSelection();
     const word = selection?.toString().trim() ?? '';
     if (!/^[A-Za-z][A-Za-z'-]{1,40}$/.test(word)) return;
+    // Suppress the toolbar this double-click's mouseup would otherwise show, and
+    // clear any toolbar already up, so only the dictionary card remains.
+    suppressToolbarUntil = Date.now() + 400;
+    uiStore.set({ toolbar: null });
     const context = selection?.anchorNode
       ? sentenceAround(selection.anchorNode, word)
       : undefined;
-    void openWordCard(word, context, e.clientX, e.clientY);
+    // Anchor the card to the selected word's rect so it can flip above/below.
+    let x = e.clientX;
+    let y = e.clientY;
+    let anchor: AnchorRect | undefined;
+    if (selection && selection.rangeCount > 0) {
+      const r = selection.getRangeAt(0).getBoundingClientRect();
+      if (r.width || r.height) {
+        x = r.left;
+        y = r.bottom + 6;
+        anchor = { top: r.top, bottom: r.bottom, left: r.left };
+      }
+    }
+    void openWordCard(word, context, x, y, anchor);
   });
 
   document.addEventListener('keydown', (e) => {
@@ -753,7 +871,7 @@ async function main() {
         return undefined;
       case 'content.translateSelection': {
         const info = currentSelectionInfo();
-        if (info) void openSentenceCard(info.text, info.x, info.y);
+        if (info) void openSentenceCard(info.text, info.x, info.y, info.anchor);
         else showToast('请先选中要翻译的文本');
         respond(null);
         return undefined;
@@ -913,9 +1031,43 @@ async function startChildSubtitleRuntime() {
   window.addEventListener('pagehide', () => runtime.destroy());
 }
 
-function speak(text: string) {
+// macOS ships many "novelty" voices (Jester, Bells, Zarvox, Bad News, …) and one
+// of them can be the system default. SpeechSynthesis with no explicit voice then
+// reads words in that silly voice. Prefer a natural English voice and never fall
+// through to the system default.
+const NOVELTY_VOICE =
+  /albert|bad news|bahh|bells|boing|bubbles|cellos|deranged|good news|jester|organ|superstar|trinoids|whisper|wobble|zarvox|flo|grandma|grandpa|reed|rocko|sandy|shelley|eddy|junior|kathy|ralph|fred/i;
+
+function pickEnglishVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | undefined {
+  const en = voices.filter((v) => /^en(-|$)/i.test(v.lang));
+  if (en.length === 0) return undefined;
+  const named = (re: RegExp) => en.find((v) => re.test(v.name));
+  return (
+    named(/Google US English/i) ||
+    named(/Google UK English/i) ||
+    named(/^Samantha/i) ||
+    named(/^Alex$/i) ||
+    named(/^Daniel/i) ||
+    en.find((v) => v.lang === 'en-US' && v.default && !NOVELTY_VOICE.test(v.name)) ||
+    en.find((v) => v.lang === 'en-US' && !NOVELTY_VOICE.test(v.name)) ||
+    en.find((v) => !NOVELTY_VOICE.test(v.name)) ||
+    en[0]
+  );
+}
+
+function speak(text: string, retried = false) {
+  const voices = speechSynthesis.getVoices();
+  // Voices can load asynchronously — wait once for them before speaking.
+  if (voices.length === 0 && !retried) {
+    speechSynthesis.addEventListener('voiceschanged', () => speak(text, true), { once: true });
+    return;
+  }
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = 'en-US';
+  const voice = pickEnglishVoice(voices);
+  if (voice) utterance.voice = voice;
+  utterance.rate = 0.95;
+  speechSynthesis.cancel(); // drop any queued utterance (e.g. a novelty one)
   speechSynthesis.speak(utterance);
 }
 

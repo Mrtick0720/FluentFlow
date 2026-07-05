@@ -1,3 +1,4 @@
+import type { QualitySegment } from '@/services/translation/quality';
 import { ATTR_TRANSLATED } from '@/shared/constants';
 import type { DisplayMode } from '@/types/models';
 import { debounce } from '@/utils/async';
@@ -26,11 +27,14 @@ function createLayoutGuard(el: HTMLElement): { before: LayoutSnapshot; after: ()
 }
 
 export interface PageTranslatorOptions {
-  translate: (texts: string[]) => Promise<string[]>;
+  translate: (segments: QualitySegment[]) => Promise<string[]>;
   targetLanguage: string;
   mode: DisplayMode;
   style: 'plain' | 'underline' | 'tinted';
   fontScale: number;
+  /** AI 精译: attach paragraph context + title flags, and translate carefully
+   * (smaller, serialized batches) for consistency. */
+  quality?: boolean;
   onProgress?: (done: number, total: number) => void;
   onError?: (message: string) => void;
 }
@@ -38,8 +42,18 @@ export interface PageTranslatorOptions {
 const MODE_ATTR = 'data-lf-mode';
 const BATCH_DEBOUNCE_MS = 120;
 const MAX_PER_FLUSH = 16;
+/** AI 精译 sends context per paragraph, so keep its batches small. */
+const MAX_PER_FLUSH_AI = 6;
 /** Overlapping provider requests — the main lever for whole-page speed. */
 const MAX_CONCURRENT_FLUSHES = 3;
+
+/** Original text of a neighbouring block, for AI context (skips our injected translation). */
+function neighborText(sibling: Element | null): string | undefined {
+  if (!(sibling instanceof HTMLElement)) return undefined;
+  const source = sibling.querySelector(':scope > .lf-original') ?? sibling;
+  const text = (source.textContent ?? '').replace(/\s+/g, ' ').trim();
+  return text ? text.slice(0, 200) : undefined;
+}
 
 /**
  * Translates page blocks lazily (viewport-first) and inserts translations
@@ -63,6 +77,10 @@ export class PageTranslator {
   private doneCount = 0;
   private totalCount = 0;
   private selfMutations = 0;
+  private settleTimers: ReturnType<typeof setTimeout>[] = [];
+  // AI 精译: the first batch runs alone to establish the domain + glossary; once
+  // it lands, later batches overlap (seeded with that shared context) for speed.
+  private qualityPrimed = false;
   public active = false;
 
   constructor(private opts: PageTranslatorOptions) {}
@@ -70,6 +88,7 @@ export class PageTranslator {
   start(): void {
     if (this.active) return;
     this.active = true;
+    this.qualityPrimed = false;
     document.documentElement.setAttribute(MODE_ATTR, this.opts.mode);
 
     this.io = new IntersectionObserver(
@@ -93,6 +112,35 @@ export class PageTranslator {
       if (added) this.rescanSoon();
     });
     this.mo.observe(document.body, { childList: true, subtree: true });
+
+    // A block that's momentarily occluded when it's flushed (header load
+    // animations, cookie/subscribe overlays that mount as translation starts)
+    // is dropped and — because the observer already unobserved it — never
+    // retried. The top-of-page title is the usual victim. Re-sweep a few times
+    // so any still-untranslated, now-unoccluded block near the viewport lands.
+    this.settleTimers = [800, 2500, 5000, 9000].map((ms) =>
+      setTimeout(() => this.requeueVisibleUntranslated(), ms),
+    );
+  }
+
+  /**
+   * Re-queue collected blocks that are near the viewport, untranslated, and no
+   * longer occluded — recovering ones dropped by a transient occlusion at flush
+   * time. Stays viewport-scoped so it preserves the lazy, viewport-first design.
+   */
+  private requeueVisibleUntranslated(): void {
+    if (!this.active) return;
+    let added = false;
+    for (const el of collectTranslatableBlocks(document.body)) {
+      if (el.hasAttribute(ATTR_TRANSLATED) || this.inflight.has(el) || this.queue.has(el)) continue;
+      if (looksLikeTargetLanguage(el.textContent?.trim() ?? '', this.opts.targetLanguage)) continue;
+      const r = el.getBoundingClientRect();
+      if (r.bottom < -200 || r.top > window.innerHeight + 200) continue; // keep it viewport-first
+      if (isOccluded(el)) continue;
+      this.queue.add(el);
+      added = true;
+    }
+    if (added) this.pumpSoon();
   }
 
   stop(): void {
@@ -106,6 +154,8 @@ export class PageTranslator {
     this.activeFlushes = 0;
     this.pumpSoon.cancel();
     this.rescanSoon.cancel();
+    this.settleTimers.forEach(clearTimeout);
+    this.settleTimers = [];
     document.documentElement.removeAttribute(MODE_ATTR);
 
     this.withSelfMutation(() => {
@@ -130,6 +180,11 @@ export class PageTranslator {
     if (this.active) document.documentElement.setAttribute(MODE_ATTR, mode);
   }
 
+  /** Toggle AI 精译 (context + glossary + title handling). Set before start(). */
+  setQuality(quality: boolean): void {
+    this.opts.quality = quality;
+  }
+
   private observeBlocks(blocks: HTMLElement[]): void {
     for (const block of blocks) {
       const text = block.textContent?.trim() ?? '';
@@ -150,7 +205,11 @@ export class PageTranslator {
   /** Keep up to MAX_CONCURRENT_FLUSHES provider requests in flight at once. */
   private pump(): void {
     if (!this.active) return;
-    while (this.activeFlushes < MAX_CONCURRENT_FLUSHES && this.queue.size > 0) {
+    // AI 精译: the first (priming) batch runs alone to establish the domain +
+    // glossary; afterwards batches overlap like fast MT. Fast mode always overlaps.
+    const maxConcurrent =
+      this.opts.quality && !this.qualityPrimed ? 1 : MAX_CONCURRENT_FLUSHES;
+    while (this.activeFlushes < maxConcurrent && this.queue.size > 0) {
       this.activeFlushes++;
       // flush() runs synchronously through batch selection before its first
       // await, so concurrent calls pick disjoint batches.
@@ -163,7 +222,8 @@ export class PageTranslator {
 
   private async flush(): Promise<void> {
     if (!this.active || this.queue.size === 0) return;
-    const batch = [...this.queue].slice(0, MAX_PER_FLUSH).filter((el) => {
+    const perFlush = this.opts.quality ? MAX_PER_FLUSH_AI : MAX_PER_FLUSH;
+    const batch = [...this.queue].slice(0, perFlush).filter((el) => {
       this.queue.delete(el);
       if (!el.isConnected || this.inflight.has(el) || el.hasAttribute(ATTR_TRANSLATED)) return false;
       // Skip content covered by an overlay (carousel slides / mega-menus stacked
@@ -177,9 +237,12 @@ export class PageTranslator {
     this.withSelfMutation(() => batch.forEach((el) => this.showSpinner(el)));
 
     try {
-      const texts = batch.map((el) => (el.textContent ?? '').replace(/\s+/g, ' ').trim());
-      const translations = await this.opts.translate(texts);
+      const segments = batch.map((el) => this.toSegment(el));
+      const translations = await this.opts.translate(segments);
       if (!this.active) return;
+      // First AI batch succeeded → domain + glossary are established; allow the
+      // remaining batches to overlap.
+      this.qualityPrimed = true;
       let applied = 0;
       this.withSelfMutation(() => {
         batch.forEach((el, i) => {
@@ -214,6 +277,19 @@ export class PageTranslator {
       this.withSelfMutation(() => batch.forEach((el) => this.hideSpinner(el)));
       batch.forEach((el) => this.inflight.delete(el));
     }
+  }
+
+  /** Build the translate segment for a block: plain text in fast mode; text +
+   * neighbour context + title flag in AI 精译 mode. */
+  private toSegment(el: HTMLElement): QualitySegment {
+    const text = (el.textContent ?? '').replace(/\s+/g, ' ').trim();
+    if (!this.opts.quality) return { text };
+    return {
+      text,
+      before: neighborText(el.previousElementSibling),
+      after: neighborText(el.nextElementSibling),
+      isTitle: /^H[1-6]$/.test(el.tagName) || el.getAttribute('role') === 'heading',
+    };
   }
 
   private showSpinner(el: HTMLElement): void {
