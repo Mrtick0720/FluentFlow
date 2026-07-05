@@ -131,6 +131,11 @@ describe('OpenAI-compatible parsing', () => {
     expect(parseTranslationsJson('t', '"你好"', 1)).toEqual(['你好']);
   });
 
+  it('recovers a single translation from a differently shaped object', () => {
+    expect(parseTranslationsJson('t', '{"translation": "你好"}', 1)).toEqual(['你好']);
+    expect(parseTranslationsJson('t', '{"result": {"text": "你好"}}', 1)).toEqual(['你好']);
+  });
+
   it('classifies 401 as auth error', async () => {
     fetchMock.mockResolvedValue(jsonResponse({}, 401));
     const provider = new OpenAIProvider();

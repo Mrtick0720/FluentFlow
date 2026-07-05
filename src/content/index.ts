@@ -78,12 +78,13 @@ async function main() {
     fontScale: settings.fontScale,
     onProgress: (done, total) => uiStore.set({ progress: { done, total } }),
     onError: (message) => {
+      // Transient per-line failures (bad JSON / count mismatch) self-heal via
+      // retry — don't nag. Only surface a likely config problem (key/URL/model)
+      // once per translation run.
+      if (/valid JSON|translations in response/i.test(message)) return;
       if (errorToastShown) return;
       errorToastShown = true;
       showToast(`翻译失败：${message}`);
-      setTimeout(() => {
-        errorToastShown = false;
-      }, 5000);
     },
   });
 
@@ -92,6 +93,7 @@ async function main() {
       translator.stop();
       uiStore.set({ pageActive: false, progress: { done: 0, total: 0 } });
     } else {
+      errorToastShown = false; // re-arm the one-time error toast for this run
       translator.start();
       uiStore.set({ pageActive: true });
     }

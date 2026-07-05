@@ -81,8 +81,11 @@ export function parseTranslationsJson(
   }
 
   // Fallback: for a single input (subtitles, quick-translate) a model that
-  // ignored the JSON instruction usually just returns the translated text.
+  // ignored the JSON instruction returns either plain text or a differently
+  // shaped object — recover the first string we can find.
   if (expectedCount === 1) {
+    const fromJson = firstString(parsed);
+    if (fromJson) return [fromJson];
     const text = rawText(content);
     if (text && !/^[[{]/.test(text)) return [text];
   }
@@ -91,6 +94,23 @@ export function parseTranslationsJson(
     'provider_error',
     `${providerName}: expected ${expectedCount} translations in response`,
   );
+}
+
+/** First non-empty string anywhere in a parsed JSON value. */
+function firstString(v: unknown): string | undefined {
+  if (typeof v === 'string') return v.trim() || undefined;
+  if (Array.isArray(v)) {
+    for (const item of v) {
+      const s = firstString(item);
+      if (s) return s;
+    }
+  } else if (v && typeof v === 'object') {
+    for (const item of Object.values(v)) {
+      const s = firstString(item);
+      if (s) return s;
+    }
+  }
+  return undefined;
 }
 
 /** Extract a JSON object/array even when wrapped in fences or surrounding prose. */
