@@ -223,14 +223,16 @@
   color: #fff;
 }
 
-/* Brand FAB: the logo fills the whole round button (one solid purple circle,
-   no dark ring). Match the mini buttons' size. */
+/* Brand FAB: the logo fills the round button. Match the mini buttons' size.
+   The logo is scaled down slightly (on a matching purple fill) so the white
+   glyph has breathing room instead of touching the edge. */
 .lf-fab-brand {
   width: 38px;
   height: 38px;
   padding: 0;
   border: none;
   overflow: hidden;
+  background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
 }
 
 .lf-fab-brand img {
@@ -238,6 +240,7 @@
   height: 100%;
   border-radius: 50%;
   object-fit: cover;
+  transform: scale(0.84);
   display: block;
 }
 
