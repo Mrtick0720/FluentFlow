@@ -710,13 +710,15 @@ function SubtitlePanel({ ui, actions }: { ui: UIState; actions: UIActions }) {
   const onDragStart = (e: ReactPointerEvent) => {
     const rect = panelRef.current?.getBoundingClientRect();
     if (!rect) return;
-    dragRef.current = { dx: e.clientX - rect.left, dy: e.clientY - rect.top };
+    // Track the pointer's offset from the bar's horizontal CENTER, so the bar
+    // stays centered on that point as its width changes with sentence length.
+    dragRef.current = { dx: e.clientX - (rect.left + rect.width / 2), dy: e.clientY - rect.top };
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
   };
   const onDragMove = (e: ReactPointerEvent) => {
     if (!dragRef.current) return;
     setPos({
-      left: Math.max(0, e.clientX - dragRef.current.dx),
+      left: Math.max(60, Math.min(e.clientX - dragRef.current.dx, window.innerWidth - 60)),
       top: Math.max(0, e.clientY - dragRef.current.dy),
     });
   };
@@ -730,14 +732,14 @@ function SubtitlePanel({ ui, actions }: { ui: UIState; actions: UIActions }) {
   });
   // Content-sized bar: anchored at the video's center line, grows with the
   // sentence up to maxWidth, then wraps. Dragging pins an explicit corner.
-  const style: CSSProperties = pos
-    ? { left: pos.left, top: pos.top, maxWidth: geometry.maxWidth }
-    : {
-        left: geometry.centerX,
-        top: geometry.top,
-        maxWidth: geometry.maxWidth,
-        transform: 'translateX(-50%)',
-      };
+  // Both default and dragged states anchor by center x with translateX(-50%),
+  // so the bar stays centered on its point regardless of sentence length.
+  const style: CSSProperties = {
+    left: pos ? pos.left : geometry.centerX,
+    top: pos ? pos.top : geometry.top,
+    maxWidth: geometry.maxWidth,
+    transform: 'translateX(-50%)',
+  };
 
   const abLabel = !s.abLoop ? 'A-B' : s.abLoop.b === -1 ? 'B?' : 'A-B ✓';
   const stopToolbarPointer = (event: ReactPointerEvent) => event.stopPropagation();
