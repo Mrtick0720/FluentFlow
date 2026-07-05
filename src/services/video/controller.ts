@@ -271,16 +271,23 @@ export class SubtitleController {
 
   private async translateAllInBackground(): Promise<void> {
     const generation = ++this.translateGeneration;
-    const CHUNK = 20;
-    for (let i = 0; i < this.segments.length; i += CHUNK) {
+    const CHUNK = 24;
+    // Fill order: the current line and everything ahead first (so playback
+    // never catches an untranslated line), then wrap back to the beginning.
+    const start = Math.max(0, this.index);
+    const order: number[] = [];
+    for (let i = start; i < this.segments.length; i++) order.push(i);
+    for (let i = 0; i < start; i++) order.push(i);
+
+    for (let c = 0; c < order.length; c += CHUNK) {
       if (generation !== this.translateGeneration) return;
-      const chunk = this.segments.slice(i, i + CHUNK).filter((s) => s.translation === undefined);
-      if (chunk.length === 0) continue;
+      const idxs = order.slice(c, c + CHUNK).filter((i) => this.segments[i]!.translation === undefined);
+      if (idxs.length === 0) continue;
       try {
-        const translations = await this.deps.translate(chunk.map((s) => s.text));
+        const translations = await this.deps.translate(idxs.map((i) => this.segments[i]!.text));
         if (generation !== this.translateGeneration) return;
-        chunk.forEach((s, j) => {
-          s.translation = translations[j] ?? '';
+        idxs.forEach((i, j) => {
+          this.segments[i]!.translation = translations[j] ?? '';
         });
         this.emitTranscript();
         const current = this.segments[this.index];
@@ -290,7 +297,7 @@ export class SubtitleController {
       } catch {
         return; // stop the background fill; the on-demand path still works
       }
-      await new Promise((resolve) => setTimeout(resolve, 400));
+      await new Promise((resolve) => setTimeout(resolve, 120));
     }
   }
 
@@ -306,6 +313,11 @@ export class SubtitleController {
     if (!segment) return;
     this.adapter?.seek(segment.start + 0.01);
     this.resumeIfAutoPaused();
+    // Re-prioritize the background fill around the new position.
+    if (this.state.mode === 'track') {
+      this.index = index;
+      void this.translateAllInBackground();
+    }
   }
 
   getVideoRect(): DOMRect | null {
