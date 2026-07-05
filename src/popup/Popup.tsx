@@ -63,7 +63,14 @@ type EngineOption = { value: ProviderSelection; label: string; model?: string };
 /** Brand logo if we have one, otherwise the colored monogram. */
 function ServiceIcon({ value, model, label }: EngineOption) {
   const logo = providerLogo(label, model, value);
-  if (logo) return <img src={logo} width={20} height={20} alt="" className="shrink-0 rounded" />;
+  if (logo) {
+    const px = Math.round(20 * logo.scale);
+    return (
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+        <img src={logo.src} alt="" style={{ width: px, height: px }} />
+      </span>
+    );
+  }
   const b = brandBadge(value, model);
   return <Badge label={b.label} bg={b.bg} />;
 }

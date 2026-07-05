@@ -527,15 +527,16 @@ function CustomEndpointsEditor({
             }`}
           >
             <div className="flex items-center gap-2">
-              {providerLogo(ep.name, ep.model) && (
-                <img
-                  src={providerLogo(ep.name, ep.model)!}
-                  width={24}
-                  height={24}
-                  alt=""
-                  className="shrink-0 rounded"
-                />
-              )}
+              {(() => {
+                const logo = providerLogo(ep.name, ep.model);
+                if (!logo) return null;
+                const px = Math.round(24 * logo.scale);
+                return (
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center">
+                    <img src={logo.src} alt="" style={{ width: px, height: px }} />
+                  </span>
+                );
+              })()}
               <div className="min-w-0 flex-1">
                 <SavedInput
                   value={ep.name}
