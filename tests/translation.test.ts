@@ -136,6 +136,13 @@ describe('OpenAI-compatible parsing', () => {
     expect(parseTranslationsJson('t', '{"result": {"text": "你好"}}', 1)).toEqual(['你好']);
   });
 
+  it('ignores metadata fields and takes the translation field', () => {
+    // Regression: don't return "Malaysia" (a language/region label) as the text.
+    expect(
+      parseTranslationsJson('t', '{"target_language": "Bahasa Melayu (Malaysia)", "translation": "China"}', 1),
+    ).toEqual(['China']);
+  });
+
   it('classifies 401 as auth error', async () => {
     fetchMock.mockResolvedValue(jsonResponse({}, 401));
     const provider = new OpenAIProvider();

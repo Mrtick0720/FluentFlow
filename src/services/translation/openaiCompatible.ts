@@ -82,9 +82,10 @@ export function parseTranslationsJson(
 
   // Fallback: for a single input (subtitles, quick-translate) a model that
   // ignored the JSON instruction returns either plain text or a differently
-  // shaped object — recover the first string we can find.
+  // shaped object — recover the translation from a known field (never a
+  // metadata field like target_language), else the raw text.
   if (expectedCount === 1) {
-    const fromJson = firstString(parsed);
+    const fromJson = extractTranslation(parsed);
     if (fromJson) return [fromJson];
     const text = rawText(content);
     if (text && !/^[[{]/.test(text)) return [text];
@@ -97,17 +98,31 @@ export function parseTranslationsJson(
 }
 
 /** First non-empty string anywhere in a parsed JSON value. */
-function firstString(v: unknown): string | undefined {
+// Keys that hold a translation — recurse only through these so we never pick
+// up a metadata string (e.g. a "target_language": "Malaysia" field).
+const TRANSLATION_KEYS = [
+  'translation',
+  'translations',
+  'translated',
+  'translated_text',
+  'text',
+  'output',
+  'result',
+  'zh',
+  'content',
+  'value',
+];
+
+function extractTranslation(v: unknown): string | undefined {
   if (typeof v === 'string') return v.trim() || undefined;
-  if (Array.isArray(v)) {
-    for (const item of v) {
-      const s = firstString(item);
-      if (s) return s;
-    }
-  } else if (v && typeof v === 'object') {
-    for (const item of Object.values(v)) {
-      const s = firstString(item);
-      if (s) return s;
+  if (Array.isArray(v)) return v.length ? extractTranslation(v[0]) : undefined;
+  if (v && typeof v === 'object') {
+    const obj = v as Record<string, unknown>;
+    for (const key of TRANSLATION_KEYS) {
+      if (key in obj) {
+        const s = extractTranslation(obj[key]);
+        if (s) return s;
+      }
     }
   }
   return undefined;
