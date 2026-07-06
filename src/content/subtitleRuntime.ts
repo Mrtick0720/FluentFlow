@@ -52,7 +52,7 @@ const OVERLAY_CSS = `
 
 /**
  * A self-contained, subtitle-only runtime: it hides the player's native
- * captions and shows exactly two LinguaFlow lines (English original + Chinese
+ * captions and shows exactly two FluentFlow lines (English original + Chinese
  * translation). Used inside embedded player frames (e.g. YouTube in Khan
  * Academy). It never bypasses login/DRM/paywalls and never scrapes protected
  * caption data — it reuses the same public adapters as the top-frame app.
@@ -119,7 +119,7 @@ export function createSubtitleRuntime(options: SubtitleRuntimeOptions): Subtitle
     if (!open) return;
     originalLine.textContent = state.original || '';
     translationLine.textContent = state.translation || '';
-    // Only ever the two LinguaFlow lines are shown; the player's native line
+    // Only ever the two FluentFlow lines are shown; the player's native line
     // stays hidden while subtitles are open.
     const hasText = Boolean(state.original || state.translation);
     overlay.hidden = !hasText;

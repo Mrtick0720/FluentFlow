@@ -236,17 +236,17 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
       id: MENU.translateSelection,
-      title: 'LinguaFlow: 翻译选中文本',
+      title: 'FluentFlow: 翻译选中文本',
       contexts: ['selection'],
     });
     chrome.contextMenus.create({
       id: MENU.togglePage,
-      title: 'LinguaFlow: 翻译/还原整页',
+      title: 'FluentFlow: 翻译/还原整页',
       contexts: ['page'],
     });
     chrome.contextMenus.create({
       id: MENU.openPanel,
-      title: 'LinguaFlow: 打开学习面板',
+      title: 'FluentFlow: 打开学习面板',
       contexts: ['page', 'selection'],
     });
   });

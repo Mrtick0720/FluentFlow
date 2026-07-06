@@ -200,7 +200,7 @@ function SubtitleDebugPanel({ info }: { info: NonNullable<UIState['subtitleDebug
         pointerEvents: 'none',
       }}
     >
-      <div style={{ fontWeight: 700, marginBottom: 4 }}>LinguaFlow · subtitle debug</div>
+      <div style={{ fontWeight: 700, marginBottom: 4 }}>FluentFlow · subtitle debug</div>
       {row('track', info.trackLabel || '—')}
       {row('lang · kind', `${info.trackLanguage || '—'} · ${info.trackKind || '—'}`)}
       {row('index', info.index)}
@@ -232,7 +232,7 @@ function SelectionToolbar({ ui, actions }: { ui: UIState; actions: UIActions }) 
       className="lf-toolbar"
       style={place.style}
       role="toolbar"
-      aria-label="LinguaFlow selection actions"
+      aria-label="FluentFlow selection actions"
     >
       <button className="lf-btn" onClick={actions.toolbarTranslate}>
         翻译
@@ -564,7 +564,7 @@ function QuickTranslate({ actions, label }: { actions: UIActions; label: string 
           </button>
         </div>
         <div className="lf-qt-footer">
-          <span className="lf-muted lf-qt-model">{label || 'LinguaFlow'} · 快捷翻译</span>
+          <span className="lf-muted lf-qt-model">{label || 'FluentFlow'} · 快捷翻译</span>
           <div className="lf-qt-actions">
             <button
               className="lf-qt-iconbtn"
@@ -638,8 +638,8 @@ function PlayerMenu({ ui, actions }: { ui: UIState; actions: UIActions }) {
   return (
     <>
       <div className="lf-menu-backdrop" onClick={actions.closePlayerMenu} />
-      <div className="lf-menu" style={style} role="menu" aria-label="LinguaFlow 快捷菜单">
-        <div className="lf-menu-title">LinguaFlow</div>
+      <div className="lf-menu" style={style} role="menu" aria-label="FluentFlow 快捷菜单">
+        <div className="lf-menu-title">FluentFlow</div>
         {items.map((item) => (
           <button
             key={item.label}
@@ -778,8 +778,8 @@ function FloatingWidget({ ui, actions }: { ui: UIState; actions: UIActions }) {
           const rect = e.currentTarget.getBoundingClientRect();
           guard(() => actions.togglePlayerMenu(rect))();
         }}
-        title="LinguaFlow 菜单"
-        aria-label="LinguaFlow 菜单"
+        title="FluentFlow 菜单"
+        aria-label="FluentFlow 菜单"
       >
         <img src={chrome.runtime.getURL('icons/icon128.png')} alt="" />
       </button>

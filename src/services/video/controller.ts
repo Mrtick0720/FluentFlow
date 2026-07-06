@@ -732,7 +732,7 @@ export class SubtitleController {
     let retries = 0;
     for (const n of this.fillAttempts.values()) retries += n;
     console.log(
-      `[LinguaFlow subtitle] ${event} — translated ${translated}/${this.segments.length}` +
+      `[FluentFlow subtitle] ${event} — translated ${translated}/${this.segments.length}` +
         ` · failed ${failed} · inFlight ${this.inFlight.size} · playhead ${this.index}` +
         ` · workers ${this.activeWorkers}/${FILL_CONCURRENCY} · aheadTarget ${FILL_PREBUFFER_AHEAD}` +
         ` · retries ${retries}`,
@@ -1050,7 +1050,7 @@ export class SubtitleController {
       const now = this.video.currentTime;
       const inRange = now >= segment.start && now < segment.end;
       console.log(
-        `[LinguaFlow sync] t=${now.toFixed(2)} rate=${this.video.playbackRate} → idx ${idx}` +
+        `[FluentFlow sync] t=${now.toFixed(2)} rate=${this.video.playbackRate} → idx ${idx}` +
           ` [${segment.start.toFixed(2)}‥${segment.end.toFixed(2)}] inRange=${inRange}` +
           ` "${segment.text.slice(0, 32)}"`,
       );

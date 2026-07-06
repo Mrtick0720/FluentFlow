@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "LinguaFlow — Bilingual Reading & Learning",
-  "version": "0.3.0",
+  "name": "FluentFlow — Bilingual Reading & Learning",
+  "version": "0.4.0",
   "description": "Read any English page bilingually, look up words, learn from video subtitles, and build your vocabulary — private by default.",
   "minimum_chrome_version": "116",
   "icons": {
@@ -16,7 +16,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "LinguaFlow"
+    "default_title": "FluentFlow"
   },
   "options_page": "options.html",
   "side_panel": {

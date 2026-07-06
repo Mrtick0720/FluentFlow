@@ -1,5 +1,5 @@
 /**
- * Injects a LinguaFlow button into the YouTube player control bar (next to
+ * Injects a FluentFlow button into the YouTube player control bar (next to
  * settings / captions), matching the native control styling. Clicking it
  * reports the button's on-screen rect so the caller can open a menu anchored
  * to it. Re-injects across YouTube's SPA navigations.
@@ -16,8 +16,8 @@ export function injectYouTubePlayerButton(onClick: (rect: DOMRect) => void): () 
     const btn = document.createElement('button');
     btn.id = BTN_ID;
     btn.className = 'ytp-button';
-    btn.title = 'LinguaFlow 翻译 / 字幕';
-    btn.setAttribute('aria-label', 'LinguaFlow');
+    btn.title = 'FluentFlow 翻译 / 字幕';
+    btn.setAttribute('aria-label', 'FluentFlow');
     Object.assign(btn.style, {
       display: 'inline-flex',
       alignItems: 'center',

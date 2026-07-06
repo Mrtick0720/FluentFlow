@@ -1,4 +1,4 @@
-/** Core data models for LinguaFlow. Single source of truth. */
+/** Core data models for FluentFlow. Single source of truth. */
 
 export type LanguageCode = string; // BCP-47-ish, e.g. 'en', 'zh-CN', 'auto'
 

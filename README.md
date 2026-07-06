@@ -1,4 +1,4 @@
-# LinguaFlow
+# FluentFlow
 
 AI 驱动的双语阅读与英语学习 Chrome 扩展（Manifest V3）。原创实现，不复用任何现有扩展的源码、UI 素材或品牌。
 

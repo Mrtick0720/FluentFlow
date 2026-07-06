@@ -290,7 +290,7 @@ test('embedded subtitles show two bilingual lines and hide native captions', asy
     const frame = page.frameLocator('#embed');
     await expect(frame.locator('.lf-sub-original')).toHaveText('English caption', { timeout: 15_000 });
     await expect(frame.locator('.lf-sub-translation')).toHaveText('中文字幕');
-    // The player's native caption line is hidden — only the two LinguaFlow lines show.
+    // The player's native caption line is hidden — only the two FluentFlow lines show.
     await expect(frame.locator('.native-caption')).toHaveCSS('opacity', '0');
     await expect(frame.locator('.lf-sub-original, .lf-sub-translation')).toHaveCount(2);
   } finally {
@@ -310,7 +310,7 @@ test('popup renders quick controls', async () => {
     const extensionId = new URL(sw.url()).host;
     const page = await context.newPage();
     await page.goto(`chrome-extension://${extensionId}/popup.html`);
-    await expect(page.getByText('LinguaFlow')).toBeVisible();
+    await expect(page.getByText('FluentFlow')).toBeVisible();
     await expect(page.getByRole('button', { name: /沉浸翻译/ })).toBeVisible();
     await expect(page.getByRole('radio', { name: '双语' })).toBeVisible();
   } finally {

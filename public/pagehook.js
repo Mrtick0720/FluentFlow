@@ -1,4 +1,4 @@
-// LinguaFlow page hook (MAIN world, YouTube only): observes the URLs the
+// FluentFlow page hook (MAIN world, YouTube only): observes the URLs the
 // player itself uses to fetch caption data, so the extension can reuse a
 // valid (POT-signed) timedtext URL for the full transcript. Observation
 // only — no request is modified, blocked, or forged.

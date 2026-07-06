@@ -7,7 +7,7 @@ import {
 } from '@/content/frameBridge';
 
 describe('subtitle frame messages', () => {
-  it('accepts only the fixed LinguaFlow command contract', () => {
+  it('accepts only the fixed FluentFlow command contract', () => {
     expect(isFrameMessage(makeFrameCommand('toggle'))).toBe(true);
     expect(isFrameMessage({ source: 'other', type: 'subtitle-command', command: 'toggle' })).toBe(false);
     expect(isFrameMessage({ source: 'linguaflow', type: 'subtitle-command', command: 'delete' })).toBe(false);

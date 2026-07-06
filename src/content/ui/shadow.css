@@ -1,4 +1,4 @@
-/* Styles inside the LinguaFlow shadow root. Isolated from the host page. */
+/* Styles inside the FluentFlow shadow root. Isolated from the host page. */
 
 :host {
   all: initial;
@@ -21,7 +21,7 @@
   --lf-border: #e4e7ee;
   --lf-accent: #6366f1;
   --lf-accent-soft: rgba(99, 102, 241, 0.1);
-  /* Violet used by the floating LinguaFlow logo — highlights the active line. */
+  /* Violet used by the floating FluentFlow logo — highlights the active line. */
   --lf-accent-strong: #8b5cf6;
   --lf-shadow: 0 8px 30px rgba(15, 20, 40, 0.16), 0 2px 8px rgba(15, 20, 40, 0.08);
   color: var(--lf-fg);
@@ -545,7 +545,7 @@
   font-weight: 600;
 }
 
-/* Active line: the LinguaFlow logo violet (high contrast in dark mode) so the
+/* Active line: the FluentFlow logo violet (high contrast in dark mode) so the
    currently-spoken subtitle immediately stands out; the row background
    highlight and left accent border stay. */
 .lf-transcript-item.lf-current .lf-transcript-text {

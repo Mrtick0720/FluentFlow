@@ -1,4 +1,4 @@
-export const EXT_NAME = 'LinguaFlow';
+export const EXT_NAME = 'FluentFlow';
 
 /** Prefix for all classes/attributes injected into host pages. */
 export const DOM_PREFIX = 'lf';

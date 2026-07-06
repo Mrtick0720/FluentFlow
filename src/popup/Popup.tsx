@@ -210,7 +210,7 @@ export function Popup() {
       <div className="flex-1 space-y-2.5 overflow-y-auto p-4">
         <header className="flex items-center gap-2">
           <img src={chrome.runtime.getURL('icons/icon48.png')} alt="" className="h-6 w-6 rounded-lg" />
-          <span className="text-base font-bold">LinguaFlow</span>
+          <span className="text-base font-bold">FluentFlow</span>
         </header>
 
         {/* 源语言 → 目标语言 */}

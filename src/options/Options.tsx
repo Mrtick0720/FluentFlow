@@ -77,7 +77,7 @@ export function Options() {
       conversations,
       settings: { ...settings, providers: {}, ai: { kind: settings.ai.kind } }, // never export keys
     };
-    downloadFile(`linguaflow-backup-${Date.now()}.json`, JSON.stringify(backup, null, 2), 'application/json');
+    downloadFile(`fluentflow-backup-${Date.now()}.json`, JSON.stringify(backup, null, 2), 'application/json');
     flash('备份已导出（不含 API 密钥）');
   }
 
@@ -120,7 +120,7 @@ export function Options() {
         new Date(v.createdAt).toISOString(),
       ]),
     ]);
-    downloadFile('linguaflow-vocabulary.csv', csv, 'text/csv');
+    downloadFile('fluentflow-vocabulary.csv', csv, 'text/csv');
   }
 
   return (
@@ -128,7 +128,7 @@ export function Options() {
       <header className="flex items-center gap-3">
         <img src={chrome.runtime.getURL('icons/icon48.png')} alt="" className="h-7 w-7 rounded-lg" />
         <div>
-          <h1 className="text-lg font-bold">LinguaFlow 设置</h1>
+          <h1 className="text-lg font-bold">FluentFlow 设置</h1>
           <p className="text-xs text-slate-400">双语阅读 · 视频字幕学习 · AI 助手 — 默认本地存储，注重隐私</p>
         </div>
       </header>
@@ -381,7 +381,7 @@ export function Options() {
 
       <Section title="隐私">
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          LinguaFlow 默认<b>不上传</b>浏览历史、URL、页面标题、字幕内容，不含任何统计分析。只有你主动翻译/查询的文本会发送给所选翻译或
+          FluentFlow 默认<b>不上传</b>浏览历史、URL、页面标题、字幕内容，不含任何统计分析。只有你主动翻译/查询的文本会发送给所选翻译或
           AI 服务方。所有学习数据（生词本、句子本、统计、缓存）仅存储在本机。
         </p>
         <Switch

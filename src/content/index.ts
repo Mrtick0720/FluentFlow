@@ -1091,7 +1091,7 @@ async function main() {
 
 /**
  * Runs in a child frame that hosts an embedded player. It shows only the
- * two LinguaFlow lines, listens for commands from the parent, and reports
+ * two FluentFlow lines, listens for commands from the parent, and reports
  * status back. No subtitle text, credentials, or provider settings cross the
  * frame boundary — the child fetches its own settings and translates locally.
  */

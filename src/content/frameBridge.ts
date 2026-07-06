@@ -1,5 +1,5 @@
 /**
- * Closed message protocol between the top frame (full LinguaFlow app) and a
+ * Closed message protocol between the top frame (full FluentFlow app) and a
  * child frame running the subtitle-only runtime (embedded players such as
  * YouTube in Khan Academy). Only these fixed shapes cross a frame boundary —
  * never subtitle text, credentials, or provider settings.
