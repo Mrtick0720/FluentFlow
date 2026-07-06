@@ -17,7 +17,7 @@ import {
 import { VideoAdapterRegistry } from '@/services/video/adapter';
 import { SubtitleController } from '@/services/video/controller';
 import { sendRequest, type Response, type TabEnvelope } from '@/shared/messages';
-import type { ProviderSelection, UserSettings } from '@/shared/settings';
+import { shouldAutoTranslate, type ProviderSelection, type UserSettings } from '@/shared/settings';
 import type { Glossary, QualitySegment } from '@/services/translation/quality';
 import type { DisplayMode } from '@/types/models';
 import { extractPageText, sentenceAround } from '@/utils/dom';
@@ -945,11 +945,7 @@ async function main() {
 
   /* ---------- auto-translate rules ---------- */
 
-  const host_ = location.hostname;
-  if (
-    settings.autoTranslateSites.includes(host_) &&
-    !settings.neverTranslateSites.includes(host_)
-  ) {
+  if (shouldAutoTranslate(location.hostname, settings)) {
     togglePage();
   }
 }

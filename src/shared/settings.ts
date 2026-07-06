@@ -126,6 +126,20 @@ export const DEFAULT_SETTINGS: UserSettings = {
   cache: { enabled: true, ttlHours: 24 * 14 },
 };
 
+/**
+ * Whether page bilingual translation should auto-enable on this hostname.
+ * OFF for every site by default: it turns on only when the user has explicitly
+ * added the host to `autoTranslateSites`, and `neverTranslateSites` always wins.
+ * Manual/session enablement is a separate path that never writes to
+ * `autoTranslateSites`, so it cannot make a site auto-translate on later visits.
+ */
+export function shouldAutoTranslate(hostname: string, settings: UserSettings): boolean {
+  return (
+    settings.autoTranslateSites.includes(hostname) &&
+    !settings.neverTranslateSites.includes(hostname)
+  );
+}
+
 /** Merge stored settings over defaults, applying migrations as needed. */
 export function migrateSettings(stored: unknown): UserSettings {
   if (!stored || typeof stored !== 'object') return structuredClone(DEFAULT_SETTINGS);

@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, migrateSettings } from '@/shared/settings';
+import {
+  DEFAULT_SETTINGS,
+  migrateSettings,
+  shouldAutoTranslate,
+  type UserSettings,
+} from '@/shared/settings';
 import {
   getSettings,
   getSettingsRedacted,
@@ -11,6 +16,45 @@ import { __clearChromeStorage } from './setup';
 
 beforeEach(() => {
   __clearChromeStorage();
+});
+
+describe('shouldAutoTranslate — page translation is opt-in per site', () => {
+  const withSites = (auto: string[], never: string[] = []): UserSettings => ({
+    ...DEFAULT_SETTINGS,
+    autoTranslateSites: auto,
+    neverTranslateSites: never,
+  });
+
+  it('is OFF by default for every site (empty allowlist)', () => {
+    expect(DEFAULT_SETTINGS.autoTranslateSites).toEqual([]);
+    expect(shouldAutoTranslate('example.com', DEFAULT_SETTINGS)).toBe(false);
+    expect(shouldAutoTranslate('news.ycombinator.com', withSites([]))).toBe(false);
+  });
+
+  it('auto-enables only hosts in autoTranslateSites', () => {
+    const s = withSites(['example.com']);
+    expect(shouldAutoTranslate('example.com', s)).toBe(true);
+    expect(shouldAutoTranslate('other.com', s)).toBe(false); // not listed → off
+  });
+
+  it('lets neverTranslateSites override the allowlist', () => {
+    const s = withSites(['example.com'], ['example.com']);
+    expect(shouldAutoTranslate('example.com', s)).toBe(false);
+  });
+
+  it('does not auto-enable a host that was only manually toggled (not persisted to the allowlist)', () => {
+    // A manual/session enable never writes to autoTranslateSites, so on the next
+    // visit the allowlist is unchanged and the decision stays off.
+    const afterSessionToggle = withSites([]); // session enable leaves the list empty
+    expect(shouldAutoTranslate('manually-enabled.com', afterSessionToggle)).toBe(false);
+  });
+
+  it('matches by exact hostname (existing allowlist behavior is stable)', () => {
+    const s = withSites(['sub.example.com']);
+    expect(shouldAutoTranslate('sub.example.com', s)).toBe(true);
+    expect(shouldAutoTranslate('example.com', s)).toBe(false);
+    expect(shouldAutoTranslate('other.sub.example.com', s)).toBe(false);
+  });
 });
 
 describe('migrateSettings', () => {

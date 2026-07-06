@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LinguaFlow — Bilingual Reading & Learning",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Read any English page bilingually, look up words, learn from video subtitles, and build your vocabulary — private by default.",
   "minimum_chrome_version": "116",
   "icons": {
