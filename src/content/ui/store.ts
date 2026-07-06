@@ -1,4 +1,4 @@
-import type { SubtitleViewState } from '@/services/video/controller';
+import type { SubtitleDebugInfo, SubtitleViewState } from '@/services/video/controller';
 import type { SubtitleStyle } from '@/shared/settings';
 import type { DictionaryEntry, SubtitleSegment } from '@/types/models';
 
@@ -48,6 +48,8 @@ export interface UIState {
   subtitleVisible: boolean;
   subtitleState: SubtitleViewState | null;
   subtitleStyle: SubtitleStyle | null;
+  /** Dev-only subtitle debug stats (populated only when lf-subtitle-debug=1). */
+  subtitleDebug: SubtitleDebugInfo | null;
   /** Current viewport-relative rectangle of the active video. */
   /** Main video's on-screen rect; anchors the FAB stack and subtitle panel. */
   videoRect: { left: number; top: number; width: number; height: number } | null;
@@ -55,6 +57,9 @@ export interface UIState {
   isFullscreen: boolean;
   transcript: SubtitleSegment[];
   transcriptVisible: boolean;
+  /** When docked onto YouTube's recommendation column, the viewport rect of that
+   * column (#secondary); the panel fills it. null = overlay mode. */
+  dockRect: { left: number; top: number; width: number } | null;
   pageActive: boolean;
   progress: { done: number; total: number };
   aiAvailable: boolean;
@@ -77,10 +82,12 @@ const initial: UIState = {
   subtitleVisible: false,
   subtitleState: null,
   subtitleStyle: null,
+  subtitleDebug: null,
   videoRect: null,
   isFullscreen: false,
   transcript: [],
   transcriptVisible: false,
+  dockRect: null,
   pageActive: false,
   progress: { done: 0, total: 0 },
   aiAvailable: false,

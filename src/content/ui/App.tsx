@@ -158,6 +158,7 @@ export function App({ actions }: { actions: UIActions }) {
         <SentenceCard key={`${ui.sentenceCard.x},${ui.sentenceCard.y}`} ui={ui} actions={actions} />
       )}
       {ui.subtitleVisible && ui.subtitleState && <SubtitlePanel ui={ui} actions={actions} />}
+      {ui.subtitleVisible && ui.subtitleDebug && <SubtitleDebugPanel info={ui.subtitleDebug} />}
       {ui.subtitleVisible && ui.transcriptVisible && <TranscriptPanel ui={ui} actions={actions} />}
       {ui.playerMenu && <PlayerMenu ui={ui} actions={actions} />}
       {ui.quickTranslateOpen && <QuickTranslate actions={actions} label={ui.translationLabel} />}
@@ -167,6 +168,50 @@ export function App({ actions }: { actions: UIActions }) {
           {ui.toast}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Dev-only overlay (rendered only when the controller pushes debug info, i.e.
+ * lf-subtitle-debug=1). Never shown in normal use. */
+function SubtitleDebugPanel({ info }: { info: NonNullable<UIState['subtitleDebug']> }) {
+  const fmt = (n: number | null) => (n == null ? '—' : n.toFixed(2));
+  const row = (k: string, v: string | number) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+      <span style={{ opacity: 0.6 }}>{k}</span>
+      <span>{v}</span>
+    </div>
+  );
+  return (
+    <div
+      aria-hidden="true"
+      style={{
+        position: 'fixed',
+        left: 8,
+        bottom: 8,
+        zIndex: 2147483647,
+        width: 236,
+        padding: '8px 10px',
+        borderRadius: 8,
+        background: 'rgba(17,24,39,0.92)',
+        color: '#e5e7eb',
+        border: '1px solid rgba(255,255,255,0.12)',
+        font: '11px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace',
+        pointerEvents: 'none',
+      }}
+    >
+      <div style={{ fontWeight: 700, marginBottom: 4 }}>LinguaFlow · subtitle debug</div>
+      {row('track', info.trackLabel || '—')}
+      {row('lang · kind', `${info.trackLanguage || '—'} · ${info.trackKind || '—'}`)}
+      {row('index', info.index)}
+      {row('time', fmt(info.currentTime))}
+      {row('segment', `${fmt(info.segStart)}‥${fmt(info.segEnd)}`)}
+      {row('inRange', info.inRange ? '✓ true' : '✗ false')}
+      {row('translated', `${info.translated}/${info.total}${info.failed ? ` (fail ${info.failed})` : ''}`)}
+      {row('inFlight', info.inFlight)}
+      {row('workers', info.workers)}
+      {row('retries', info.retries)}
+      {row('prebuffer', info.prebuffer)}
     </div>
   );
 }
@@ -752,14 +797,46 @@ function FloatingWidget({ ui, actions }: { ui: UIState; actions: UIActions }) {
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
+/** Leaving the subtitle: brief grace period to reach the toolbar before it hides. */
+const TOOLBAR_HIDE_AFTER_SUBTITLE_MS = 500;
+/** Leaving the toolbar itself: same brief grace period. */
+const TOOLBAR_HIDE_AFTER_TOOLBAR_MS = 500;
+/** Touch tap reveals the toolbar, then it auto-hides (no hover on touch). */
+const TOOLBAR_HIDE_AFTER_TOUCH_MS = 4000;
+
 function SubtitlePanel({ ui, actions }: { ui: UIState; actions: UIActions }) {
   const s = ui.subtitleState!;
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
-  const [controlsPinned, setControlsPinned] = useState(false);
+  // Hover-intent toolbar visibility: show on hover, and hide only after a grace
+  // period so the cursor can travel from the subtitle to the toolbar (and back)
+  // without it vanishing — like Figma/Notion floating toolbars. No click to pin.
+  const [controlsVisible, setControlsVisible] = useState(false);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pointerType = useRef<string>('mouse');
   const dragRef = useRef<{ dx: number; dy: number } | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
+  const showControls = () => {
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    hideTimer.current = null;
+    setControlsVisible(true);
+  };
+  const scheduleHide = (ms: number) => {
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => {
+      hideTimer.current = null;
+      setControlsVisible(false);
+    }, ms);
+  };
+  useEffect(
+    () => () => {
+      if (hideTimer.current) clearTimeout(hideTimer.current);
+    },
+    [],
+  );
+
   const onDragStart = (e: ReactPointerEvent) => {
+    pointerType.current = e.pointerType;
     const rect = panelRef.current?.getBoundingClientRect();
     if (!rect) return;
     // Track the pointer's offset from the bar's horizontal CENTER, so the bar
@@ -795,10 +872,13 @@ function SubtitlePanel({ ui, actions }: { ui: UIState; actions: UIActions }) {
 
   const abLabel = !s.abLoop ? 'A-B' : s.abLoop.b === -1 ? 'B?' : 'A-B ✓';
   const stopToolbarPointer = (event: ReactPointerEvent) => event.stopPropagation();
+  // Track-mode gap (no active line): render nothing — collapse the surface box
+  // so there's no empty bar and no "…".
+  const surfaceEmpty = s.status === 'ready' && s.mode === 'track' && !s.original;
 
   return (
     <div
-      className={`lf-subtitle-panel ${controlsPinned ? 'lf-controls-pinned' : ''}`}
+      className={`lf-subtitle-panel ${controlsVisible ? 'lf-controls-visible' : ''}`}
       style={style}
       ref={panelRef}
       role="region"
@@ -809,6 +889,8 @@ function SubtitlePanel({ ui, actions }: { ui: UIState; actions: UIActions }) {
         role="toolbar"
         aria-label="字幕学习工具"
         onPointerDown={stopToolbarPointer}
+        onMouseEnter={showControls}
+        onMouseLeave={() => scheduleHide(TOOLBAR_HIDE_AFTER_TOOLBAR_MS)}
       >
         <button
           className={`lf-btn ${ui.transcriptVisible ? 'lf-btn-primary' : ''}`}
@@ -864,7 +946,7 @@ function SubtitlePanel({ ui, actions }: { ui: UIState; actions: UIActions }) {
         <button className="lf-btn" onClick={actions.toggleSubtitlePanel} aria-label="关闭字幕">✕</button>
       </div>
       <div
-        className="lf-subtitle-surface"
+        className={`lf-subtitle-surface${surfaceEmpty ? ' lf-subtitle-surface--empty' : ''}`}
         style={
           ui.subtitleStyle
             ? ({ '--lf-sub-size': `${ui.subtitleStyle.fontSize}px` } as CSSProperties)
@@ -873,7 +955,13 @@ function SubtitlePanel({ ui, actions }: { ui: UIState; actions: UIActions }) {
         onPointerDown={onDragStart}
         onPointerMove={onDragMove}
         onPointerUp={onDragEnd}
-        onClick={() => setControlsPinned((pinned) => !pinned)}
+        onMouseEnter={showControls}
+        onMouseLeave={() => scheduleHide(TOOLBAR_HIDE_AFTER_SUBTITLE_MS)}
+        onClick={() => {
+          // Touch has no hover: a tap reveals the toolbar, then it auto-hides.
+          showControls();
+          if (pointerType.current === 'touch') scheduleHide(TOOLBAR_HIDE_AFTER_TOUCH_MS);
+        }}
       >
         {s.status === 'no-video' && <div className="lf-muted">未检测到视频。</div>}
         {s.status === 'no-subtitles' && (
@@ -884,7 +972,7 @@ function SubtitlePanel({ ui, actions }: { ui: UIState; actions: UIActions }) {
         {s.status === 'ready' && s.mode === 'live' && !s.original && (
           <div className="lf-muted">等待字幕…（如无反应，请在播放器中开启字幕/CC）</div>
         )}
-        {s.status === 'ready' && (s.mode === 'track' || s.original) && (
+        {s.status === 'ready' && s.original && (
           <>
             {(ui.subtitleStyle?.showTranslation ?? true) && (
               <div className={`lf-subtitle-translation ${s.translating ? 'lf-pending' : ''}`}>
@@ -892,7 +980,7 @@ function SubtitlePanel({ ui, actions }: { ui: UIState; actions: UIActions }) {
               </div>
             )}
             {(ui.subtitleStyle?.showOriginal ?? true) && (
-              <div className="lf-subtitle-original">{s.original || '…'}</div>
+              <div className="lf-subtitle-original">{s.original}</div>
             )}
           </>
         )}
@@ -927,8 +1015,37 @@ function TranscriptPanel({ ui, actions }: { ui: UIState; actions: UIActions }) {
     list.scrollBy({ top: delta, behavior: 'smooth' });
   }, [activeIndex, ui.transcript.length]);
 
+  // Panel layout, anchored to real YouTube geometry — no hard-coded offsets.
+  //  • Docked (ui.dockRect set): fill YouTube's recommendation column (#secondary)
+  //    exactly — left/width from that column, top at its top (clamped below the
+  //    masthead), extending to the viewport bottom. The recs are hidden behind
+  //    it; the video sits in #primary to the left and is never covered.
+  //  • Overlay (fallback — #secondary wrapped/absent, narrow, non-YouTube): dock
+  //    to the player's right edge via CSS vars.
+  const vr = ui.videoRect;
+  const dr = ui.dockRect;
+  let dockStyle: CSSProperties | undefined;
+  if (dr) {
+    dockStyle = {
+      left: dr.left,
+      top: dr.top,
+      width: dr.width,
+      right: 'auto',
+      bottom: 0,
+      height: 'auto',
+    };
+  } else if (vr) {
+    // CSS custom properties aren't in the CSSProperties type, so cast.
+    dockStyle = {
+      '--lf-tr-top': `${Math.round(vr.top)}px`,
+      '--lf-tr-height': `${Math.round(vr.height)}px`,
+      '--lf-tr-left': `${Math.round(vr.left + vr.width)}px`,
+      '--lf-tr-width': 'auto',
+    } as CSSProperties;
+  }
+
   return (
-    <div className="lf-transcript" role="region" aria-label="字幕列表">
+    <div className="lf-transcript" style={dockStyle} role="region" aria-label="字幕列表">
       <div className="lf-transcript-header">
         <span className="lf-muted">
           字幕列表{s.mode === 'live' ? '（随播放累积）' : ` · ${ui.transcript.length} 句`}

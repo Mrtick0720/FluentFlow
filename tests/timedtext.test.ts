@@ -150,4 +150,63 @@ describe('segmentsFromTimedText', () => {
     expect(segments.length).toBeGreaterThan(1);
     for (const s of segments) expect(s.text.length).toBeLessThanOrEqual(200);
   });
+
+  it('ends a sentence at the source cue end (dDurationMs), matching YouTube', () => {
+    // Manual captions: each cue is a full line lasting several seconds.
+    const segments = segmentsFromTimedText({
+      events: [
+        { tStartMs: 160, dDurationMs: 4720, segs: [{ utf8: 'Today I am here with Eric.' }] },
+        { tStartMs: 4880, dDurationMs: 5120, segs: [{ utf8: 'And before that, senior role.' }] },
+        { tStartMs: 10000, dDurationMs: 5760, segs: [{ utf8: 'You have been on sabbatical.' }] },
+      ],
+    });
+    expect(segments[0]).toMatchObject({ start: 0.16, end: 4.88 });
+    expect(segments[1]).toMatchObject({ start: 4.88, end: 10 });
+    expect(segments[2]).toMatchObject({ start: 10, end: 15.76 });
+  });
+
+  it('leaves back-to-back cues contiguous — no gaps, no overlap', () => {
+    const segments = segmentsFromTimedText({
+      events: [
+        { tStartMs: 0, dDurationMs: 3000, segs: [{ utf8: 'One two three.' }] },
+        { tStartMs: 3000, dDurationMs: 3000, segs: [{ utf8: 'Four five six.' }] },
+        { tStartMs: 6000, dDurationMs: 3000, segs: [{ utf8: 'Seven eight nine.' }] },
+      ],
+    });
+    for (let i = 1; i < segments.length; i++) {
+      expect(segments[i]!.start).toBeGreaterThanOrEqual(segments[i - 1]!.end); // no overlap
+      expect(segments[i]!.start - segments[i - 1]!.end).toBeLessThanOrEqual(0.001); // no gap
+    }
+  });
+
+  it('preserves a real gap when a cue ends well before the next begins', () => {
+    const segments = segmentsFromTimedText({
+      events: [
+        { tStartMs: 0, dDurationMs: 2000, segs: [{ utf8: 'Hello.' }] }, // [0, 2]
+        { tStartMs: 5000, dDurationMs: 2000, segs: [{ utf8: 'World.' }] }, // [5, 7] after 3s silence
+      ],
+    });
+    expect(segments[0]).toMatchObject({ end: 2 }); // cue end, NOT extended to 5
+    expect(segments[1]).toMatchObject({ start: 5 });
+  });
+
+  it('clamps a cue that overruns the next sentence (no overlap)', () => {
+    const segments = segmentsFromTimedText({
+      events: [
+        { tStartMs: 0, dDurationMs: 6000, segs: [{ utf8: 'Overlong.' }] }, // cue claims [0, 6]
+        { tStartMs: 4000, dDurationMs: 2000, segs: [{ utf8: 'Next.' }] }, // but next starts at 4
+      ],
+    });
+    expect(segments[0]!.end).toBe(4); // clamped to next start
+  });
+
+  it('falls back to the next cue start when no duration is available', () => {
+    const segments = segmentsFromTimedText({
+      events: [
+        { tStartMs: 0, segs: [{ utf8: 'Hello.' }] }, // no dDurationMs
+        { tStartMs: 3000, segs: [{ utf8: 'World.' }] },
+      ],
+    });
+    expect(segments[0]).toMatchObject({ end: 3 }); // contiguous with next
+  });
 });

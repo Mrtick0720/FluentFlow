@@ -137,11 +137,14 @@ const CLAUSE_CONJUNCTION = /^(and|but|so|or|because|which|that|when|while|then|w
  * punctuation-light ASR speech still yields readable lines.
  */
 export function segmentsFromTimedText(data: { events?: Json3Event[] }): SubtitleSegment[] {
-  const words: Array<{ text: string; startMs: number; boundary?: boolean }> = [];
+  // `cueEnd` = the source cue's real end (tStartMs + dDurationMs), undefined for
+  // legacy word-streams that don't expose a duration.
+  const words: Array<{ text: string; startMs: number; cueEnd?: number; boundary?: boolean }> = [];
   let pendingBoundary = false;
   for (const event of data.events ?? []) {
     if (!event.segs || event.aAppend) continue;
     const base = event.tStartMs ?? 0;
+    const cueEnd = event.dDurationMs ? base + event.dDurationMs : undefined;
     for (const seg of event.segs) {
       let text = (seg.utf8 ?? '').replace(/\s+/g, ' ').trim();
       if (!text) continue;
@@ -155,22 +158,31 @@ export function segmentsFromTimedText(data: { events?: Json3Event[] }): Subtitle
         text = text.replace(/^>+\s*/, '');
         if (!text) continue;
       }
-      words.push({ text, startMs: base + (seg.tOffsetMs ?? 0), boundary: pendingBoundary });
+      words.push({ text, startMs: base + (seg.tOffsetMs ?? 0), cueEnd, boundary: pendingBoundary });
       pendingBoundary = false;
     }
   }
 
   const segments: SubtitleSegment[] = [];
-  let current: { parts: string[]; startMs: number } | null = null;
+  let current: { parts: string[]; startMs: number; cueEnd?: number } | null = null;
 
-  const flush = (endMs: number) => {
+  // End a sentence from the SOURCE cue timing when possible, so the timeline
+  // matches what YouTube actually displays. Priority:
+  //   1) the cue's real end (tStartMs + dDurationMs)
+  //   2) the next sentence's start (contiguous — no artificial gap)
+  //   3) legacy: lastWord + SENTENCE_GAP_MS (only when no duration at all)
+  // The end never crosses the next sentence's start (no overlap).
+  const flush = (nextStartMs?: number) => {
     if (!current) return;
     const text = current.parts.join(' ').replace(/\s+/g, ' ').trim();
     if (text) {
+      let endMs = current.cueEnd ?? nextStartMs ?? current.startMs + SENTENCE_GAP_MS;
+      if (nextStartMs !== undefined && endMs > nextStartMs) endMs = nextStartMs; // no overlap
+      if (endMs <= current.startMs) endMs = current.startMs + 200; // keep a visible duration
       segments.push({
         index: segments.length,
         start: current.startMs / 1000,
-        end: Math.max(endMs, current.startMs + 200) / 1000,
+        end: endMs / 1000,
         text,
       });
     }
@@ -181,8 +193,9 @@ export function segmentsFromTimedText(data: { events?: Json3Event[] }): Subtitle
     const word = words[i]!;
     const next = words[i + 1];
     if (word.boundary) flush(word.startMs); // speaker change
-    current ??= { parts: [], startMs: word.startMs };
+    current ??= { parts: [], startMs: word.startMs, cueEnd: word.cueEnd };
     current.parts.push(word.text);
+    current.cueEnd = word.cueEnd; // extend to this word's cue end (undefined = no duration)
 
     const gapMs = next ? next.startMs - word.startMs : Number.POSITIVE_INFINITY;
     const length = current.parts.join(' ').length;
@@ -194,11 +207,32 @@ export function segmentsFromTimedText(data: { events?: Json3Event[] }): Subtitle
       gapMs > SENTENCE_GAP_MS ||
       length > MAX_SENTENCE_CHARS ||
       clauseBreak;
-    if (shouldBreak) {
-      flush(next ? Math.min(next.startMs, word.startMs + SENTENCE_GAP_MS) : word.startMs + SENTENCE_GAP_MS);
-    }
+    if (shouldBreak) flush(next?.startMs);
   }
-  flush(words.length ? words[words.length - 1]!.startMs + SENTENCE_GAP_MS : 0);
+  flush();
+
+  try {
+    if (typeof localStorage !== 'undefined' && localStorage.getItem('lf-subtitle-debug') === '1') {
+      const rawCues = (data.events ?? [])
+        .filter((e) => e.segs && !e.aAppend)
+        .slice(0, 10)
+        .map((e, i) => {
+          const start = (e.tStartMs ?? 0) / 1000;
+          const end = ((e.tStartMs ?? 0) + (e.dDurationMs ?? 0)) / 1000;
+          const text = (e.segs ?? []).map((s) => s.utf8 ?? '').join('').replace(/\s+/g, ' ').trim();
+          return `  #${i} [${start.toFixed(2)}‥${end.toFixed(2)}] "${text.slice(0, 40)}"`;
+        })
+        .join('\n');
+      console.log('[Timeline raw] first 10 YouTube caption cues (start‥end):\n' + rawCues);
+      const grouped = segments
+        .slice(0, 10)
+        .map((s) => `  #${s.index} [${s.start.toFixed(2)}‥${s.end.toFixed(2)}] "${s.text.slice(0, 40)}"`)
+        .join('\n');
+      console.log('[Timeline grouped] first 10 grouped sentences (start‥end):\n' + grouped);
+    }
+  } catch {
+    /* logging only */
+  }
   return segments;
 }
 

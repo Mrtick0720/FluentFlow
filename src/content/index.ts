@@ -61,15 +61,6 @@ async function main() {
 
   /* ---------- page translation ---------- */
 
-  const translate = async (texts: string[]) => {
-    const res = await sendRequest('translation.translate', {
-      texts,
-      from: settings.sourceLanguage,
-      to: settings.targetLanguage,
-    });
-    return res.translations;
-  };
-
   // Whole-page translation. 'fast' uses machine translation (its own fast
   // provider) so a slow LLM chosen for selection/explanations doesn't make整页
   // 翻译 crawl. 'ai' uses the LLM with context + a per-page glossary threaded
@@ -85,6 +76,18 @@ async function main() {
     if (p === 'openai' || p.startsWith('custom:')) return p;
     const first = settings.customEndpoints[0];
     return first ? (`custom:${first.id}` as ProviderSelection) : 'openai';
+  };
+
+  // Video subtitles use the configured translation provider (the LLM — product
+  // decision, not a speed choice). A coordinated worker-pool pre-fill in the
+  // SubtitleController's worker-pool pre-fill keeps it ahead of playback.
+  const translateSubtitle = async (texts: string[]) => {
+    const res = await sendRequest('translation.translate', {
+      texts,
+      from: settings.sourceLanguage,
+      to: settings.targetLanguage,
+    });
+    return res.translations;
   };
 
   const translatePage = async (segments: QualitySegment[]) => {
@@ -169,9 +172,17 @@ async function main() {
     .register(new GenericHtml5Adapter());
 
   let videoWatchedRecorded = false;
+  // Tracks the YouTube videoId so SPA navigation to a different video hard-resets
+  // the subtitle session (old segments must never advance against the new video).
+  let lastVideoId = currentVideoId();
+  // True from yt-navigate-start until the new page settles: the video frame goes
+  // black / repositions during this window, so we freeze the layout sync (no rect
+  // updates) and keep the overlay hidden — nothing can jump.
+  let navigating = false;
   const subtitleController = new SubtitleController(adapterRegistry, {
-    translate,
+    translate: translateSubtitle,
     onState: (state) => uiStore.set({ subtitleState: state }),
+    onDebug: (info) => uiStore.set({ subtitleDebug: info }),
     onTranscript: (segments) => uiStore.set({ transcript: segments }),
     smartTranslate: async (texts) =>
       (await sendRequest('subtitle.smartTranslate', { texts, to: settings.targetLanguage })).sentences,
@@ -233,11 +244,59 @@ async function main() {
     });
     // SPA navigation: leaving a watch page tears down the video UI (so the
     // buttons/subtitle don't linger over the feed); entering one re-detects.
+
+    // Hide the old overlay the INSTANT navigation begins — before the video frame
+    // goes black / repositions — so it can't jump. Freeze the layout sync (below)
+    // so nothing repositions during the transition; detach stops the sync loop and
+    // clears the old segments now. subtitleVisible is kept so the overlay is
+    // restored once the new video loads. The full hard reset still runs at -finish.
+    window.addEventListener('yt-navigate-start', () => {
+      navigating = true;
+      if (!uiStore.get().subtitleVisible) return;
+      subtitleController.detach();
+      uiStore.set({ subtitleState: null, transcript: [], transcriptVisible: false, subtitleDebug: null });
+    });
+
     window.addEventListener('yt-navigate-finish', () => {
+      const newVideoId = currentVideoId();
+      if (newVideoId !== lastVideoId) {
+        lastVideoId = newVideoId;
+        // Hard video-context reset: the player reuses the same <video> element,
+        // so the old segments would keep advancing against the NEW video's time.
+        // Tear the session down immediately (clears segments/track/index/text,
+        // cancels in-flight fill/translations via the generation bump) before
+        // the new video plays.
+        const wasVisible = uiStore.get().subtitleVisible;
+        subtitleController.detach();
+        uiStore.set({ subtitleState: null, transcript: [], transcriptVisible: false, subtitleDebug: null });
+        videoWatchedRecorded = false;
+        subtitleUpgraded = false;
+        setTimeout(() => {
+          navigating = false; // new page settled — resume layout tracking
+          resetAutoSubtitle();
+          if (isVideoPage()) {
+            detectVideo();
+            if (wasVisible) void reattachSubtitle(); // rebind to the new video
+          } else {
+            uiStore.set({
+              subtitleVisible: false,
+              videoDetected: false,
+              videoRect: null,
+              playerMenu: null,
+            });
+          }
+        }, 300);
+        return;
+      }
+      // Same videoId (e.g. re-navigation to the current video): if the overlay
+      // was hidden at navigate-start, restore it once the page settles.
       setTimeout(() => {
+        navigating = false; // page settled — resume layout tracking
         resetAutoSubtitle();
         if (isVideoPage()) {
           detectVideo();
+          const state = uiStore.get();
+          if (state.subtitleVisible && !state.subtitleState) void reattachSubtitle();
         } else {
           if (uiStore.get().subtitleVisible) void toggleSubtitlePanel();
           uiStore.set({ videoDetected: false, videoRect: null, playerMenu: null });
@@ -321,6 +380,9 @@ async function main() {
     const measure = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
+        // Frozen during SPA navigation: don't chase the video's rect while the
+        // frame goes black / repositions, so the overlay/buttons can't jump.
+        if (navigating) return;
         const video = findMainVideo();
         if (video && video !== observed) {
           if (observed) resizeObserver?.unobserve(observed);
@@ -352,6 +414,72 @@ async function main() {
     measure();
   }
 
+  // ── Docked transcript column (YouTube) ──────────────────────────────────────
+  // The transcript list docks exactly onto YouTube's recommendation column: we
+  // measure #secondary's rect, place the (opaque) panel over it, and hide the
+  // recommendation content underneath. The video lives in #primary to the left
+  // and is never covered; as the window narrows, YouTube's own flex shrinks
+  // #primary while #secondary stays a fixed-width right column, so the panel
+  // tracks it automatically — no page-margin reflow. A #secondary that has
+  // wrapped below the player (narrow / mobile) or is absent (non-YouTube) falls
+  // back to the overlay.
+  const DOCK_TOP_MIN = 56; // keep the panel below the fixed masthead when scrolled
+  let recsStyleEl: HTMLStyleElement | null = null;
+
+  function setRecsHidden(on: boolean): void {
+    if (on && !recsStyleEl) {
+      recsStyleEl = document.createElement('style');
+      recsStyleEl.id = 'lf-transcript-dock-style';
+      // Keep #secondary's box (so it still reserves the column) but hide its
+      // recommendation content behind the panel.
+      recsStyleEl.textContent =
+        'html.lf-transcript-docked ytd-watch-flexy #secondary{visibility:hidden!important}';
+      document.documentElement.appendChild(recsStyleEl);
+    }
+    document.documentElement.classList.toggle('lf-transcript-docked', on);
+  }
+
+  function computeDockRect(): { left: number; top: number; width: number } | null {
+    const s = uiStore.get();
+    if (!(s.subtitleVisible && s.transcriptVisible) || s.isFullscreen) return null;
+    const vr = s.videoRect;
+    const secondary = document.querySelector('ytd-watch-flexy #secondary');
+    if (!vr || !secondary) return null;
+    const r = secondary.getBoundingClientRect();
+    // Only dock when #secondary is the right-hand column beside the player — not
+    // wrapped below it on a narrow / mobile layout (then fall back to overlay).
+    const sideBySide = r.width >= 200 && r.left >= vr.left + vr.width - 40 && r.top <= vr.top + 40;
+    if (!sideBySide) return null;
+    return {
+      left: Math.round(r.left),
+      // Align the panel top with the player's top edge (not #secondary's, which
+      // can sit a few px lower); clamp below the fixed masthead when scrolled.
+      top: Math.round(Math.max(vr.top, DOCK_TOP_MIN)),
+      width: Math.round(r.width),
+    };
+  }
+
+  // Idempotent; runs on every UI-state change (subscribed below) — including the
+  // videoRect updates measure() pushes on resize/scroll/poll — so the panel keeps
+  // tracking #secondary. Converges without looping (no-op when the rect is same).
+  function syncDock(): void {
+    const rect = computeDockRect();
+    const cur = uiStore.get().dockRect;
+    const same =
+      (!rect && !cur) ||
+      (!!rect &&
+        !!cur &&
+        rect.left === cur.left &&
+        rect.top === cur.top &&
+        rect.width === cur.width);
+    if (!same) uiStore.set({ dockRect: rect });
+    setRecsHidden(rect != null);
+  }
+
+  uiStore.subscribe(syncDock);
+  // Never leave the recommendation column hidden if the page is frozen/unloaded.
+  window.addEventListener('pagehide', () => setRecsHidden(false));
+
   // Set when an embedded player frame (e.g. YouTube in Khan Academy) reports a
   // video. The player and its two lines live in the child; the top frame only
   // offers the toggle and forwards the command.
@@ -375,6 +503,17 @@ async function main() {
       if (uiStore.get().subtitleVisible) broadcastSubtitleCommand('open');
     }
   });
+
+  // Rebind the open subtitle panel to the current video after an SPA video
+  // change. attach() detaches the old session first; retry a few times because
+  // the new video's caption track may not be ready immediately after navigation.
+  async function reattachSubtitle(attempt = 0) {
+    if (!uiStore.get().subtitleVisible || !isVideoPage()) return;
+    const state = await subtitleController.attach(location.href);
+    if ((state.status === 'no-subtitles' || state.status === 'no-video') && attempt < 5) {
+      setTimeout(() => void reattachSubtitle(attempt + 1), 1200);
+    }
+  }
 
   async function toggleSubtitlePanel() {
     const closing = uiStore.get().subtitleVisible;
@@ -1065,6 +1204,14 @@ function speak(text: string, retried = false) {
   utterance.rate = 0.95;
   speechSynthesis.cancel(); // drop any queued utterance (e.g. a novelty one)
   speechSynthesis.speak(utterance);
+}
+
+/** The current YouTube videoId (watch `?v=`, or /shorts//embed/ path), or null. */
+function currentVideoId(): string | null {
+  const v = new URLSearchParams(location.search).get('v');
+  if (v) return v;
+  const m = location.pathname.match(/\/(?:shorts|embed)\/([^/?#]+)/);
+  return m ? m[1]! : null;
 }
 
 function formatTime(seconds: number): string {

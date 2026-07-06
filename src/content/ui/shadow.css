@@ -21,6 +21,8 @@
   --lf-border: #e4e7ee;
   --lf-accent: #6366f1;
   --lf-accent-soft: rgba(99, 102, 241, 0.1);
+  /* Violet used by the floating LinguaFlow logo — highlights the active line. */
+  --lf-accent-strong: #8b5cf6;
   --lf-shadow: 0 8px 30px rgba(15, 20, 40, 0.16), 0 2px 8px rgba(15, 20, 40, 0.08);
   color: var(--lf-fg);
   font-size: 14px;
@@ -35,6 +37,8 @@
     --lf-border: #363b47;
     --lf-accent: #818cf8;
     --lf-accent-soft: rgba(129, 140, 248, 0.16);
+    /* Brighter violet for better contrast on the dark panel. */
+    --lf-accent-strong: #a78bfa;
     --lf-shadow: 0 8px 30px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.3);
   }
 }
@@ -375,9 +379,12 @@
   z-index: 1;
 }
 
-.lf-subtitle-panel:hover .lf-subtitle-toolbar,
-.lf-subtitle-panel:focus-within .lf-subtitle-toolbar,
-.lf-subtitle-panel.lf-controls-pinned .lf-subtitle-toolbar {
+/* Visibility is driven by JS hover-intent (lf-controls-visible) so the toolbar
+   stays put while the cursor travels to it. :has(:focus-visible) keeps it up for
+   KEYBOARD focus only (Tab) — a mouse click leaves :focus but not :focus-visible,
+   so clicking a button does NOT pin the toolbar (mouse-leave still auto-hides). */
+.lf-subtitle-panel.lf-controls-visible .lf-subtitle-toolbar,
+.lf-subtitle-panel:has(:focus-visible) .lf-subtitle-toolbar {
   opacity: 1;
   visibility: visible;
   transform: translate(-50%, 0);
@@ -405,6 +412,17 @@
 
 .lf-subtitle-surface:active {
   cursor: grabbing;
+}
+
+/* No active line (gap between sentences): show nothing at all — no box, no "…". */
+.lf-subtitle-surface--empty {
+  min-height: 0;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .lf-subtitle-surface .lf-muted {
@@ -453,14 +471,6 @@
   font-size: 12.5px;
 }
 
-@media (hover: none) {
-  .lf-subtitle-panel:not(.lf-controls-pinned) .lf-subtitle-toolbar {
-    opacity: 0;
-    visibility: hidden;
-    pointer-events: none;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .lf-subtitle-toolbar {
     transition: none;
@@ -471,13 +481,22 @@
 
 .lf-transcript {
   position: fixed;
-  right: 16px;
-  top: 9vh;
-  width: 300px;
-  height: 78vh;
+  /* Docked to the YouTube player. When the player is measured, JS feeds these
+     vars from the same rect the subtitle overlay uses: top/height match the
+     player edges exactly, and left = the player's right edge so the panel spans
+     the whole recommendation column out to the viewport edge (right: 12px) —
+     fully covering the thumbnails regardless of window width. The fallbacks
+     apply only before the player is measured; the mobile query overrides all. */
+  top: var(--lf-tr-top, 56px);
+  height: var(--lf-tr-height, auto);
+  bottom: 0;
+  left: var(--lf-tr-left, auto);
+  right: 12px;
+  width: var(--lf-tr-width, min(560px, calc(100vw - 32px)));
   background: var(--lf-bg);
   border: 1px solid var(--lf-border);
-  border-radius: 14px;
+  /* Square the bottom corners so it reads as an attached full-height panel. */
+  border-radius: 14px 14px 0 0;
   box-shadow: var(--lf-shadow);
   display: flex;
   flex-direction: column;
@@ -488,7 +507,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
+  padding: 12px 14px;
   border-bottom: 1px solid var(--lf-border);
 }
 
@@ -496,23 +515,24 @@
   flex: 1;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 6px;
+  padding: 8px 8px 16px;
 }
 
 .lf-transcript-item {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
   text-align: left;
-  padding: 6px 8px;
+  padding: 9px 11px;
+  margin-bottom: 2px;
   border: none;
   border-left: 3px solid transparent;
   border-radius: 8px;
   background: transparent;
   color: var(--lf-fg);
   cursor: pointer;
-  font-size: 12.5px;
-  line-height: 1.45;
+  font-size: 16px;
+  line-height: 1.5;
 }
 
 .lf-transcript-item:hover {
@@ -521,24 +541,37 @@
 
 .lf-transcript-item.lf-current {
   background: var(--lf-accent-soft);
-  border-left-color: var(--lf-accent);
+  border-left-color: var(--lf-accent-strong);
   font-weight: 600;
+}
+
+/* Active line: the LinguaFlow logo violet (high contrast in dark mode) so the
+   currently-spoken subtitle immediately stands out; the row background
+   highlight and left accent border stay. */
+.lf-transcript-item.lf-current .lf-transcript-text {
+  color: var(--lf-accent-strong);
+}
+
+.lf-transcript-item.lf-current .lf-transcript-trans {
+  color: var(--lf-accent-strong);
+  opacity: 0.8;
 }
 
 .lf-transcript-time {
   color: var(--lf-fg-soft);
   font-size: 11px;
-  min-width: 34px;
-  padding-top: 1px;
+  min-width: 38px;
+  padding-top: 2px;
   flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .lf-transcript-trans {
   display: block;
   color: var(--lf-fg-soft);
-  font-size: 12px;
+  font-size: 14.5px;
   font-weight: 400;
-  margin-top: 2px;
+  margin-top: 3px;
 }
 
 /* ---------- player quick menu ---------- */
@@ -719,6 +752,15 @@
 }
 
 @media (max-width: 720px), (max-height: 620px) {
+  /* Ignore the desktop player-docking vars; keep the original mobile panel. */
+  .lf-transcript {
+    top: 56px;
+    height: auto;
+    bottom: 0;
+    left: auto;
+    right: 16px;
+    width: min(300px, calc(100vw - 32px));
+  }
   .lf-qt {
     width: calc(100vw - 16px);
     height: calc(100vh - 16px);

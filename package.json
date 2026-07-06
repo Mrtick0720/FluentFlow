@@ -1,6 +1,6 @@
 {
   "name": "linguaflow",
-  "version": "0.1.1",
+  "version": "0.3.0",
   "private": true,
   "description": "AI-powered bilingual reading and language learning assistant (Chrome Extension, Manifest V3)",
   "type": "module",
