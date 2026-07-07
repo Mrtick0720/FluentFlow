@@ -460,6 +460,131 @@ describe('SubtitleController track mode', () => {
   });
 });
 
+describe('SubtitleController study mode (auto-pause per sentence)', () => {
+  const resume = (video: HTMLVideoElement) => {
+    (video as unknown as { paused: boolean }).paused = false;
+  };
+
+  it('pauses at the end of each sentence and resumes to the next without re-pausing in place', async () => {
+    const segs = [
+      { index: 0, start: 0, end: 2, text: 'First sentence' },
+      { index: 1, start: 3, end: 5, text: 'Second sentence' }, // 1s gap before it
+    ];
+    const h = trackHarness(segs, async ([t]) => [`译：${t}`]);
+    await h.controller.attach('https://example.com/video');
+    h.controller.setAutoPause(true);
+
+    h.tick(1); // playing the first sentence
+    expect(latest(h.states).original).toBe('First sentence');
+    expect(h.video.paused).toBe(false);
+
+    h.tick(2.1); // crossed the end of the first sentence → auto-pause
+    expect(h.video.paused).toBe(true);
+    expect(latest(h.states).original).toBe('First sentence');
+
+    // User presses Space to resume. The very next frame is still in the gap
+    // right after the first sentence; study mode must NOT re-pause in place.
+    resume(h.video);
+    h.tick(2.2);
+    expect(h.video.paused).toBe(false);
+
+    // Playback reaches the second sentence and plays it through.
+    h.tick(3.2);
+    expect(latest(h.states).original).toBe('Second sentence');
+    expect(h.video.paused).toBe(false);
+
+    // Auto-pause fires again at the end of the second sentence.
+    h.tick(5.1);
+    expect(h.video.paused).toBe(true);
+
+    h.controller.detach();
+  });
+
+  it('re-pauses at a sentence end again after the user replays it', async () => {
+    const segs = [
+      { index: 0, start: 0, end: 2, text: 'First sentence' },
+      { index: 1, start: 3, end: 5, text: 'Second sentence' },
+    ];
+    const h = trackHarness(segs, async ([t]) => [`译：${t}`]);
+    await h.controller.attach('https://example.com/video');
+    h.controller.setAutoPause(true);
+
+    h.tick(1);
+    h.tick(2.1); // auto-pause at end of first sentence
+    expect(h.video.paused).toBe(true);
+
+    // Replay the sentence (↻): seeks back to its start and resumes.
+    h.controller.repeat();
+    expect(h.video.paused).toBe(false);
+
+    h.tick(1); // playing the first sentence again
+    h.tick(2.1); // must auto-pause at its end once more
+    expect(h.video.paused).toBe(true);
+
+    h.controller.detach();
+  });
+});
+
+describe('SubtitleController loop current sentence', () => {
+  it('continuously replays the current sentence until loop is disabled', async () => {
+    const segs = [
+      { index: 0, start: 0, end: 2, text: 'First sentence' },
+      { index: 1, start: 3, end: 5, text: 'Second sentence' },
+    ];
+    const h = trackHarness(segs, async ([t]) => [`译：${t}`]);
+    await h.controller.attach('https://example.com/video');
+
+    h.tick(1); // first sentence is current
+    expect(latest(h.states).original).toBe('First sentence');
+
+    h.controller.toggleLoop();
+    expect(latest(h.states).loopMode).toBe('forever');
+
+    // Reaching the end of the sentence seeks back to its start instead of
+    // rolling into the next one.
+    h.tick(2.1);
+    expect(h.video.currentTime).toBeCloseTo(0.01, 5);
+    expect(latest(h.states).original).toBe('First sentence');
+
+    // It keeps looping the same sentence — never advances while loop is on.
+    h.tick(2.1);
+    expect(h.video.currentTime).toBeCloseTo(0.01, 5);
+    expect(latest(h.states).original).toBe('First sentence');
+
+    // Disabling loop lets playback advance normally again.
+    h.controller.toggleLoop();
+    expect(latest(h.states).loopMode).toBe('off');
+    h.tick(3.2);
+    expect(latest(h.states).original).toBe('Second sentence');
+
+    h.controller.detach();
+  });
+
+  it('is mutually exclusive with study mode — enabling one disables the other', async () => {
+    const segs = [
+      { index: 0, start: 0, end: 2, text: 'First sentence' },
+      { index: 1, start: 3, end: 5, text: 'Second sentence' },
+    ];
+    const h = trackHarness(segs, async ([t]) => [`译：${t}`]);
+    await h.controller.attach('https://example.com/video');
+    h.tick(1);
+
+    // Study on, then Loop on → Study turns off automatically.
+    h.controller.setAutoPause(true);
+    expect(latest(h.states).autoPause).toBe(true);
+    h.controller.toggleLoop();
+    expect(latest(h.states).loopMode).toBe('forever');
+    expect(latest(h.states).autoPause).toBe(false);
+
+    // Study on again → Loop turns off automatically.
+    h.controller.setAutoPause(true);
+    expect(latest(h.states).autoPause).toBe(true);
+    expect(latest(h.states).loopMode).toBe('off');
+
+    h.controller.detach();
+  });
+});
+
 describe('SubtitleController native seek (translation timeline reset)', () => {
   afterEach(() => {
     vi.useRealTimers();

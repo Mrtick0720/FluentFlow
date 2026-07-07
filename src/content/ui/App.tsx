@@ -21,7 +21,7 @@ export interface UIActions {
   exportSentence(): void;
   toggleSubtitlePanel(): void;
   subtitlePrev(): void;
-  subtitleRepeat(): void;
+  subtitleToggleLoop(): void;
   subtitleNext(): void;
   subtitleAB(): void;
   subtitleSpeed(rate: number): void;
@@ -882,12 +882,12 @@ function SubtitlePanel({ ui, actions }: { ui: UIState; actions: UIActions }) {
       style={style}
       ref={panelRef}
       role="region"
-      aria-label="双语字幕"
+      aria-label="Bilingual subtitles"
     >
       <div
         className="lf-subtitle-toolbar"
         role="toolbar"
-        aria-label="字幕学习工具"
+        aria-label="Subtitle study tools"
         onPointerDown={stopToolbarPointer}
         onMouseEnter={showControls}
         onMouseLeave={() => scheduleHide(TOOLBAR_HIDE_AFTER_TOOLBAR_MS)}
@@ -895,32 +895,45 @@ function SubtitlePanel({ ui, actions }: { ui: UIState; actions: UIActions }) {
         <button
           className={`lf-btn ${ui.transcriptVisible ? 'lf-btn-primary' : ''}`}
           onClick={actions.subtitleToggleTranscript}
-          title="字幕列表"
+          title="Show Transcript"
+          aria-label="Transcript"
         >
-          ≡ 列表
+          ≡ Transcript
         </button>
-        <button className="lf-btn" onClick={actions.subtitlePrev} title="上一句" aria-label="上一句">⏮</button>
-        <button className="lf-btn" onClick={actions.subtitleRepeat} title="重复本句" aria-label="重复本句">↻</button>
-        <button className="lf-btn" onClick={actions.subtitleNext} title="下一句" aria-label="下一句">⏭</button>
+        <button className="lf-btn" onClick={actions.subtitlePrev} title="Previous Sentence" aria-label="Previous">⏮</button>
+        <button
+          className={`lf-btn ${s.loopMode !== 'off' ? 'lf-btn-primary' : ''}`}
+          onClick={actions.subtitleToggleLoop}
+          title="Loop Current Sentence"
+          aria-label="Loop"
+          aria-pressed={s.loopMode !== 'off'}
+        >
+          🔁
+        </button>
+        <button className="lf-btn" onClick={actions.subtitleNext} title="Next Sentence" aria-label="Next">⏭</button>
         <button
           className={`lf-btn ${s.abLoop ? 'lf-btn-primary' : ''}`}
           onClick={actions.subtitleAB}
-          title="A-B 循环"
+          title="Loop Between Two Points"
+          aria-label="A-B loop"
         >
           {abLabel}
         </button>
         <button
           className={`lf-btn ${s.autoPause ? 'lf-btn-primary' : ''}`}
           onClick={actions.subtitleToggleAutoPause}
-          title="每句结束自动暂停"
+          title="Pause After Every Sentence"
+          aria-label="Study"
+          aria-pressed={s.autoPause}
         >
-          逐句停
+          Study
         </button>
         <select
           className="lf-select"
           value={s.playbackRate}
           onChange={(event) => actions.subtitleSpeed(Number(event.target.value))}
-          aria-label="播放速度"
+          title="Playback Speed"
+          aria-label="Playback Speed"
         >
           {SPEEDS.map((rate) => <option key={rate} value={rate}>{rate}×</option>)}
         </select>
@@ -929,21 +942,23 @@ function SubtitlePanel({ ui, actions }: { ui: UIState; actions: UIActions }) {
             className="lf-select"
             value={s.activeTrackId}
             onChange={(event) => actions.subtitleSelectTrack(event.target.value)}
-            aria-label="选择字幕轨道"
+            title="Subtitle Track"
+            aria-label="Subtitle Track"
           >
             {s.tracks.map((track) => <option key={track.id} value={track.id}>{track.label}</option>)}
           </select>
         )}
-        <button className="lf-btn" onClick={actions.subtitleBookmark} title="收藏当前字幕">🔖</button>
+        <button className="lf-btn" onClick={actions.subtitleBookmark} title="Bookmark Sentence" aria-label="Bookmark Sentence">🔖</button>
         <button
           className="lf-btn"
           onClick={actions.subtitleExplain}
           disabled={!ui.aiAvailable}
-          title={ui.aiAvailable ? '讲解当前句' : '需要在设置中配置 AI'}
+          title={ui.aiAvailable ? 'AI Enhance Translation' : 'Configure AI in settings'}
+          aria-label="AI Enhance Translation"
         >
           ✨
         </button>
-        <button className="lf-btn" onClick={actions.toggleSubtitlePanel} aria-label="关闭字幕">✕</button>
+        <button className="lf-btn" onClick={actions.toggleSubtitlePanel} title="Close Toolbar" aria-label="Close Toolbar">✕</button>
       </div>
       <div
         className={`lf-subtitle-surface${surfaceEmpty ? ' lf-subtitle-surface--empty' : ''}`}

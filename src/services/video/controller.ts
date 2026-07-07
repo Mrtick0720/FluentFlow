@@ -17,7 +17,16 @@ export interface SubtitleViewState {
   activeTrackId?: string;
   /** Learning mode: pause the video at the end of every sentence. */
   autoPause: boolean;
+  /** Loop mode for the current sentence. `off`: no looping; `forever`:
+   * replay the current sentence on repeat until disabled. Left as an enum
+   * (rather than a boolean) so future modes — e.g. a fixed repeat count — can
+   * be added without another state migration. */
+  loopMode: LoopMode;
 }
+
+/** How the current sentence is looped. Only `off` / `forever` exist today;
+ * additional modes can be added here without touching the state shape. */
+export type LoopMode = 'off' | 'forever';
 
 /** Live pre-fill + sync snapshot for the dev debug panel (lf-subtitle-debug=1). */
 export interface SubtitleDebugInfo {
@@ -352,6 +361,7 @@ export class SubtitleController {
     playbackRate: 1,
     tracks: [],
     autoPause: false,
+    loopMode: 'off',
   };
   private lastLiveText = '';
   /** Sentence being spoken right now: buffered silently, translated ahead. */
@@ -369,6 +379,15 @@ export class SubtitleController {
   private liveIdleTimer: ReturnType<typeof setTimeout> | undefined;
   private liveHistory: SubtitleSegment[] = [];
   private autoPause = false;
+  /** In study mode, the segment index we last auto-paused after. Guards against
+   * re-pausing at the same boundary the instant the user resumes (playback is
+   * still positioned at that sentence's tail/the following gap). Reset to -1 on
+   * any explicit navigation or when playback enters a new active segment. */
+  private autoPausedAt = -1;
+  /** Loop mode: replay one sentence on repeat until disabled. `loopIndex` is the
+   * segment being looped (captured when the toggle turns on). */
+  private loopMode: LoopMode = 'off';
+  private loopIndex = -1;
   // Whole-video pre-fill worker pool: lines currently being translated (dedups
   // background + on-demand), per-line failure counts, and the generation the
   // running pool belongs to (-1 = idle).
@@ -485,6 +504,9 @@ export class SubtitleController {
     this.tracks = [];
     this.segments = [];
     this.index = -1;
+    this.autoPausedAt = -1;
+    this.loopMode = 'off';
+    this.loopIndex = -1;
     this.abLoop = null;
     this.setState({
       status: 'idle',
@@ -494,6 +516,7 @@ export class SubtitleController {
       index: -1,
       total: 0,
       abLoop: null,
+      loopMode: 'off',
       tracks: [],
       activeTrackId: undefined,
     });
@@ -595,6 +618,7 @@ export class SubtitleController {
     if (this.state.mode !== 'track' || this.segments.length === 0) return;
     if (!this.seeking) this.resetFill(); // a `seeked` with no captured `seeking`
     this.seeking = false;
+    this.autoPausedAt = -1; // a user scrub clears any pending study boundary
     if (subtitleDebugEnabled()) console.log('[Seek] native seek END → re-anchor at new position');
     this.index = -1; // force re-evaluation against the new time
     this.syncTrackMode(true); // re-anchor + dispatch P0 for the current cue
@@ -862,7 +886,14 @@ export class SubtitleController {
 
   setAutoPause(on: boolean): void {
     this.autoPause = on;
-    this.setState({ autoPause: on });
+    this.autoPausedAt = -1;
+    // Study Mode and Loop drive conflicting playback logic — keep them mutually
+    // exclusive: turning Study on disables Loop.
+    if (on && this.loopMode !== 'off') {
+      this.loopMode = 'off';
+      this.loopIndex = -1;
+    }
+    this.setState({ autoPause: on, loopMode: this.loopMode });
   }
 
   /** Jump to a transcript line (lyrics list click). */
@@ -870,6 +901,7 @@ export class SubtitleController {
     const source = this.state.mode === 'track' ? this.segments : this.liveHistory;
     const segment = source[index];
     if (!segment) return;
+    if (this.loopMode !== 'off' && this.state.mode === 'track') this.loopIndex = index; // loop follows the clicked line
     this.seekTo(segment.start + 0.01);
     this.resumeIfAutoPaused();
     // Reprioritize around the seek target immediately: dispatch P0 for the
@@ -895,6 +927,9 @@ export class SubtitleController {
   }
 
   private resumeIfAutoPaused(): void {
+    // Explicit navigation (repeat/prev/next/transcript click) clears the study
+    // boundary so the target sentence can auto-pause at its own end again.
+    this.autoPausedAt = -1;
     if (this.autoPause && this.video?.paused) void this.video.play().catch(() => {});
   }
 
@@ -921,6 +956,7 @@ export class SubtitleController {
     return segment ? { segment, translation: this.state.translation } : null;
   }
 
+  /** One-off replay of the current sentence (used by explicit navigation). */
   repeat(): void {
     const segment = this.current();
     if (segment && this.state.mode === 'track') this.seekTo(segment.start + 0.01);
@@ -928,9 +964,37 @@ export class SubtitleController {
     this.resumeIfAutoPaused();
   }
 
+  /**
+   * Toggle continuous looping of the current sentence. Unlike `repeat` (a single
+   * replay), while loop is on the controller re-seeks to the sentence's start
+   * every time playback reaches its end, so it never advances. Track mode only —
+   * live captions have no discrete sentence to loop.
+   */
+  toggleLoop(): void {
+    this.loopMode = this.loopMode === 'off' ? 'forever' : 'off';
+    if (this.loopMode !== 'off' && this.state.mode === 'track') {
+      // Study Mode and Loop drive conflicting playback logic — keep them
+      // mutually exclusive: turning Loop on disables Study.
+      this.autoPause = false;
+      this.autoPausedAt = -1;
+      this.loopIndex =
+        this.index >= 0 ? this.index : this.findSegmentIndex(this.video?.currentTime ?? 0);
+      // Seek to the sentence start and play so the loop is immediately audible,
+      // even if study mode had paused the video.
+      const seg = this.segments[this.loopIndex];
+      if (seg) this.seekTo(seg.start + 0.01);
+      if (this.video?.paused) void this.video.play().catch(() => {});
+    } else {
+      this.loopIndex = -1;
+    }
+    this.setState({ loopMode: this.loopMode, autoPause: this.autoPause });
+  }
+
   prev(): void {
     if (this.state.mode === 'track' && this.index > 0) {
-      this.seekTo(this.segments[this.index - 1]!.start + 0.01);
+      const target = this.index - 1;
+      if (this.loopMode !== 'off') this.loopIndex = target; // loop follows the new sentence
+      this.seekTo(this.segments[target]!.start + 0.01);
     } else if (this.video) {
       this.video.currentTime = Math.max(0, this.video.currentTime - LIVE_SKIP_SECONDS);
     }
@@ -939,7 +1003,9 @@ export class SubtitleController {
 
   next(): void {
     if (this.state.mode === 'track' && this.index < this.segments.length - 1) {
-      this.seekTo(this.segments[this.index + 1]!.start + 0.01);
+      const target = this.index + 1;
+      if (this.loopMode !== 'off') this.loopIndex = target; // loop follows the new sentence
+      this.seekTo(this.segments[target]!.start + 0.01);
     } else if (this.video) {
       this.video.currentTime += LIVE_SKIP_SECONDS;
     }
@@ -948,6 +1014,7 @@ export class SubtitleController {
 
   /** First call sets A at the current segment/time, second sets B, third clears. */
   toggleABLoop(): void {
+    this.autoPausedAt = -1;
     const now = this.video?.currentTime ?? 0;
     const segment = this.current();
     if (!this.abLoop) {
@@ -983,6 +1050,16 @@ export class SubtitleController {
     const t = this.video.currentTime + SUBTITLE_LEAD_SECONDS;
     this.maybePushDebug(); // keep the dev panel's clock live (throttled, dev only)
 
+    // Loop mode: replay the captured sentence on repeat. Reaching its end seeks
+    // back to its start, so playback never rolls into the next sentence.
+    if (this.loopMode !== 'off' && this.loopIndex >= 0) {
+      const looped = this.segments[this.loopIndex];
+      if (looped && t >= looped.end) {
+        this.seekTo(looped.start + 0.01);
+        return;
+      }
+    }
+
     if (this.abLoop && Number.isFinite(this.abLoop.b) && t >= this.abLoop.b) {
       this.seekTo(this.abLoop.a + 0.01);
       return;
@@ -992,10 +1069,21 @@ export class SubtitleController {
     if (idx === this.index && !force) return;
 
     // Learning mode: freeze on the sentence that just finished instead of
-    // rolling into the next one.
-    if (this.autoPause && !force && this.index >= 0 && idx !== this.index && !this.video.paused) {
+    // rolling into the next one. The `autoPausedAt` guard prevents re-pausing at
+    // the same boundary right after the user resumes — playback is still parked
+    // at that sentence's tail (the following gap reads as idx === -1, which
+    // differs from this.index), so without it Space could never advance.
+    if (
+      this.autoPause &&
+      !force &&
+      this.index >= 0 &&
+      idx !== this.index &&
+      this.autoPausedAt !== this.index &&
+      !this.video.paused
+    ) {
       const finished = this.segments[this.index]!;
       if (t >= finished.end) {
+        this.autoPausedAt = this.index;
         this.video.pause();
         this.seekTo(Math.max(finished.start, finished.end - 0.05));
         return;
@@ -1045,6 +1133,9 @@ export class SubtitleController {
     }
 
     this.index = idx;
+    // Playback moved into a new active sentence: the previous auto-pause
+    // boundary is behind us, so the next sentence-end may pause again.
+    this.autoPausedAt = -1;
     const segment = this.segments[idx]!;
     if (subtitleDebugEnabled()) {
       const now = this.video.currentTime;

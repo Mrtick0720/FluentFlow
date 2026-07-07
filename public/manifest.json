@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "FluentFlow — Bilingual Reading & Learning",
-  "version": "0.4.0",
+  "version": "0.4.2",
   "description": "Read any English page bilingually, look up words, learn from video subtitles, and build your vocabulary — private by default.",
   "minimum_chrome_version": "116",
   "icons": {

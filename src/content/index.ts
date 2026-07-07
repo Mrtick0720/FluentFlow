@@ -830,7 +830,7 @@ async function main() {
     },
     toggleSubtitlePanel: () => void toggleSubtitlePanel(),
     subtitlePrev: () => subtitleController.prev(),
-    subtitleRepeat: () => subtitleController.repeat(),
+    subtitleToggleLoop: () => subtitleController.toggleLoop(),
     subtitleNext: () => subtitleController.next(),
     subtitleAB: () => subtitleController.toggleABLoop(),
     subtitleSpeed: (rate) => subtitleController.setSpeed(rate),
@@ -855,7 +855,11 @@ async function main() {
     subtitleToggleAutoPause() {
       const on = !(uiStore.get().subtitleState?.autoPause ?? false);
       subtitleController.setAutoPause(on);
-      showToast(on ? '已开启逐句暂停：每句结束自动停，↻ 重听，⏭ 继续' : '已关闭逐句暂停');
+      showToast(
+        on
+          ? 'Study Mode on — pauses after every sentence. Press Space or ▶ to continue.'
+          : 'Study Mode off',
+      );
     },
     subtitleToggleTranscript() {
       uiStore.set((prev) => ({ transcriptVisible: !prev.transcriptVisible }));
